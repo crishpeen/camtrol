@@ -1,15 +1,19 @@
-import { classifyGesture, getFingerStates } from "./gestures.js";
+import { classifyGesture, getFingerStates, isPinchPose } from "./gestures.js";
 import { createGestureStabilizer } from "./gesture-stabilizer.js";
+import { createMotionGestureTracker, pinchStrength } from "./gesture-motion.js";
 
 function pt(x, y, z = 0) {
   return { x, y, z, name: "" };
 }
 
-/** Build a minimal 21-point hand with per-finger extension flags. */
-function mockHand({ index, middle, ring, pinky, thumb }, handedness = "Right") {
-  const kp = new Array(21).fill(null).map((_, i) => pt(0.5, 0.5));
+/**
+ * @param {{ index?: boolean, middle?: boolean, ring?: boolean, pinky?: boolean, thumb?: boolean | 'up' | 'down' }} pose
+ */
+function mockHand(pose, handedness = "Right") {
+  const { index = false, middle = false, ring = false, pinky = false, thumb = false } = pose;
+  const kp = new Array(21).fill(null).map(() => pt(0.5, 0.5));
 
-  kp[0] = pt(0.5, 0.9); // wrist
+  kp[0] = pt(0.5, 0.9);
   kp[5] = pt(0.45, 0.7);
   kp[9] = pt(0.5, 0.7);
   kp[13] = pt(0.55, 0.7);
@@ -35,13 +39,25 @@ function mockHand({ index, middle, ring, pinky, thumb }, handedness = "Right") {
   kp[1] = pt(0.38, 0.78);
   kp[2] = pt(0.36, 0.72);
   kp[3] = pt(0.34, 0.66);
-  if (thumb) {
+
+  if (thumb === "down") {
+    kp[4] = pt(0.32, 0.84);
+    kp[3] = pt(0.34, 0.76);
+  } else if (thumb === true || thumb === "up") {
     kp[4] = pt(0.28, 0.55);
   } else {
     kp[4] = pt(0.36, 0.64);
   }
 
   return { keypoints: kp, handedness };
+}
+
+function mockPinchHand() {
+  const hand = mockHand({ index: true, middle: false, ring: false, pinky: false, thumb: "up" });
+  hand.keypoints[8] = pt(0.4, 0.62);
+  hand.keypoints[4] = pt(0.41, 0.63);
+  hand.keypoints[3] = pt(0.39, 0.66);
+  return hand;
 }
 
 function stabilizeMany(hand, frames = 10) {
@@ -53,34 +69,47 @@ function stabilizeMany(hand, frames = 10) {
   return last;
 }
 
-const cases = [
+const staticCases = [
   ["peace", { index: true, middle: true, ring: false, pinky: false, thumb: false }],
   ["pointing", { index: true, middle: false, ring: false, pinky: false, thumb: false }],
-  ["open_palm", { index: true, middle: true, ring: true, pinky: true, thumb: true }],
+  ["open_palm", { index: true, middle: true, ring: true, pinky: true, thumb: "up" }],
   ["fist", { index: false, middle: false, ring: false, pinky: false, thumb: false }],
-  ["thumbs_up", { index: false, middle: false, ring: false, pinky: false, thumb: true }],
+  ["thumbs_up", { index: false, middle: false, ring: false, pinky: false, thumb: "up" }],
+  ["thumbs_down", { index: false, middle: false, ring: false, pinky: false, thumb: "down" }],
+  ["middle_finger", { index: false, middle: true, ring: false, pinky: false, thumb: false }],
+  ["rock_on", { index: true, middle: false, ring: false, pinky: true, thumb: false }],
 ];
 
 let passed = 0;
-for (const [expected, pose] of cases) {
+let total = staticCases.length + 2;
+
+for (const [expected, pose] of staticCases) {
   const hand = mockHand(pose);
-  const raw = classifyGesture(hand.keypoints, hand.handedness);
   const stable = stabilizeMany(hand);
   const ok = stable?.id === expected;
   if (ok) passed += 1;
-  console.log(
-    ok ? "✓" : "✗",
-    expected,
-    "raw=",
-    raw?.id ?? "null",
-    "stable=",
-    stable?.id ?? "null",
-    "fingers=",
-    Object.entries(getFingerStates(hand.keypoints, hand.handedness))
-      .map(([k, v]) => `${k}:${v.extended ? "up" : "down"}`)
-      .join(" ")
-  );
+  console.log(ok ? "✓" : "✗", expected, "→", stable?.id ?? "null");
 }
 
-console.log(`\n${passed}/${cases.length} passed`);
-process.exit(passed === cases.length ? 0 : 1);
+const pinchHand = mockPinchHand();
+const pinchOk = isPinchPose(pinchHand.keypoints) && stabilizeMany(pinchHand)?.id === "pinch";
+if (pinchOk) passed += 1;
+console.log(pinchOk ? "✓" : "✗", "pinch →", stabilizeMany(pinchHand)?.id, "strength", pinchStrength(pinchHand.keypoints).toFixed(2));
+
+const motion = createMotionGestureTracker();
+let zoomIn = null;
+const t0 = Date.now();
+for (let i = 0; i < 12; i++) {
+  const hand = mockPinchHand();
+  const close = i / 11;
+  hand.keypoints[4] = pt(0.48 - close * 0.06, 0.63);
+  hand.keypoints[8] = pt(0.52 - close * 0.065, 0.64);
+  const hit = motion.push(hand.keypoints, t0 + i * 60, 640, { handKey: "r" });
+  if (hit) zoomIn = hit;
+}
+const zoomOk = zoomIn?.id === "zoom_in";
+if (zoomOk) passed += 1;
+console.log(zoomOk ? "✓" : "✗", "zoom_in →", zoomIn?.id ?? "null");
+
+console.log(`\n${passed}/${total} passed`);
+process.exit(passed === total ? 0 : 1);

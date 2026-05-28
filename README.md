@@ -6,7 +6,7 @@ A browser-based webcam tracker for **movement**, **hand gestures**, and **body p
 
 - **Motion detection** — frame-difference analysis (no ML model, very lightweight)
 - **Hand tracking** — MediaPipe Hands via `@tensorflow-models/hand-pose-detection`
-- **Gestures** — open palm, fist, peace sign, pointing, thumbs up
+- **Gestures** — thumbs up/down, peace, point, middle finger, rock on, open palm, fist, pinch, pinch zoom in/out, wave
 - **Body pose** — MoveNet (single-person) via `@tensorflow-models/pose-detection`
 - **Event log** — timestamps, details, and `console` output for every detection
 - **Live overlay** — skeleton lines on the camera preview
@@ -37,6 +37,22 @@ Alternatively, set **Source** to **Deploy from a branch** and choose `main` with
 4. Move, show gestures, or shift your body — events appear in the sidebar log.
 5. Toggle detectors or adjust **Motion sensitivity** as needed.
 
+### Hand gestures
+
+| Gesture | How to perform |
+|---------|----------------|
+| Thumbs up / down | Thumb extended up or down, other fingers curled |
+| Peace ✌️ | Index + middle up |
+| Point 👉 | Index only |
+| Middle finger | Middle only |
+| Rock on 🤘 | Index + pinky up |
+| Open palm ✋ | All fingers spread |
+| Fist ✊ | All fingers curled |
+| Pinch 🤏 | Thumb + index tips together |
+| Zoom in 🔍 | Pinch, then move fingertips closer |
+| Zoom out 🔎 | Pinch, then spread thumb and index apart |
+| Wave 👋 | Open hand, move side to side |
+
 ## Project structure
 
 ```
@@ -48,7 +64,9 @@ js/overlay.js       # Canvas skeleton overlay
 js/detectors/
   motion.js         # Pixel-diff motion
   hands.js          # Hand + gesture detection
-  gestures.js       # Gesture classification
+  gestures.js         # Static pose classification
+  gesture-motion.js   # Wave & pinch zoom (temporal)
+  gesture-stabilizer.js
   pose.js           # MoveNet body pose
 ```
 

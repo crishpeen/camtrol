@@ -1,5 +1,5 @@
 /** MediaPipe hand landmark indices */
-const LM = {
+export const LM = {
   WRIST: 0,
   THUMB_CMC: 1,
   THUMB_MCP: 2,
@@ -24,11 +24,9 @@ const LM = {
 };
 
 /** @typedef {{ extended: boolean, strength: number }} FingerState */
+/** @typedef {{ extended: boolean, vertical: 'up' | 'down' | 'neutral', strength: number }} ThumbState */
 
 /**
- * Palm-relative finger extension (robust to hand rotation vs wrist-distance heuristics).
- * A finger is extended when the tip lies beyond the DIP joint along the MCP→PIP direction.
- *
  * @param {{ x: number, y: number, z?: number }[]} keypoints
  * @param {number} tipIdx
  * @param {number} dipIdx
@@ -46,11 +44,9 @@ function fingerState(keypoints, tipIdx, dipIdx, pipIdx, mcpIdx) {
   const dipToMcp = dist(dip, mcp);
   const pipToMcp = dist(pip, mcp);
 
-  // Tip must be clearly past DIP and PIP along the finger.
   const lengthRatio = tipToMcp / Math.max(dipToMcp, 1e-6);
   const pastPip = tipToMcp > pipToMcp * 1.08;
 
-  // Direction: tip continues the PIP→DIP vector (finger straightening).
   const boneX = dip.x - pip.x;
   const boneY = dip.y - pip.y;
   const extX = tip.x - dip.x;
@@ -69,8 +65,8 @@ function fingerState(keypoints, tipIdx, dipIdx, pipIdx, mcpIdx) {
 
 /**
  * @param {{ x: number, y: number, z?: number }[]} keypoints
- * @param {"Left" | "Right" | string} [handedness]
- * @returns {FingerState}
+ * @param {string} [handedness]
+ * @returns {ThumbState}
  */
 function thumbState(keypoints, handedness) {
   const tip = keypoints[LM.THUMB_TIP];
@@ -93,6 +89,8 @@ function thumbState(keypoints, handedness) {
   const lateral = isRight ? tip.x - ip.x : ip.x - tip.x;
   const lateralNorm = lateral / palmWidth;
 
+  const verticalNorm = (tip.y - mcp.y) / palmWidth;
+
   const extended =
     spreadDelta > 0.14 &&
     spreadRatio > 1.1 &&
@@ -101,8 +99,15 @@ function thumbState(keypoints, handedness) {
 
   const curled = spreadDelta < 0.06 && spreadRatio < 1.08 && lengthRatio < 1.06;
 
+  let vertical = "neutral";
+  if (extended) {
+    if (verticalNorm < -0.11) vertical = "up";
+    else if (verticalNorm > 0.11) vertical = "down";
+  }
+
   return {
     extended,
+    vertical,
     strength: extended
       ? Math.min(1, spreadDelta * 2.5)
       : curled
@@ -113,7 +118,7 @@ function thumbState(keypoints, handedness) {
 
 /**
  * @param {{ x: number, y: number, z?: number }[]} keypoints
- * @param {"Left" | "Right" | string} [handedness]
+ * @param {string} [handedness]
  */
 export function getFingerStates(keypoints, handedness) {
   return {
@@ -125,23 +130,51 @@ export function getFingerStates(keypoints, handedness) {
   };
 }
 
-/**
- * @param {FingerState} state
- */
+/** @param {FingerState} state */
 function isExtended(state) {
   return state.extended && state.strength >= 0.4;
 }
 
-/**
- * @param {FingerState} state
- */
+/** @param {FingerState} state */
 function isCurled(state) {
   return !state.extended && state.strength < 0.35;
 }
 
+/** @param {ThumbState} thumb */
+function isThumbUp(thumb) {
+  return thumb.extended && thumb.vertical === "up" && thumb.strength >= 0.4;
+}
+
+/** @param {ThumbState} thumb */
+function isThumbDown(thumb) {
+  return thumb.extended && thumb.vertical === "down" && thumb.strength >= 0.4;
+}
+
 /**
  * @param {{ x: number, y: number, z?: number }[]} keypoints
- * @param {"Left" | "Right" | string} [handedness]
+ */
+export function isPinchPose(keypoints) {
+  const palm = Math.max(dist(keypoints[LM.INDEX_MCP], keypoints[LM.PINKY_MCP]), 1e-6);
+  const ratio = dist(keypoints[LM.THUMB_TIP], keypoints[LM.INDEX_TIP]) / palm;
+  return ratio < 0.24;
+}
+
+/**
+ * Rock / horns: index + pinky extended, middle + ring curled.
+ */
+function isRockOn(f) {
+  return (
+    isExtended(f.index) &&
+    isExtended(f.pinky) &&
+    isCurled(f.middle) &&
+    isCurled(f.ring) &&
+    !isThumbUp(f.thumb)
+  );
+}
+
+/**
+ * @param {{ x: number, y: number, z?: number }[]} keypoints
+ * @param {string} [handedness]
  * @returns {{ id: string, confidence: number } | null}
  */
 export function classifyGesture(keypoints, handedness) {
@@ -153,28 +186,43 @@ export function classifyGesture(keypoints, handedness) {
   const middleUp = isExtended(f.middle);
   const ringUp = isExtended(f.ring);
   const pinkyUp = isExtended(f.pinky);
-  const thumbUp = isExtended(f.thumb);
 
   const indexDown = isCurled(f.index);
   const middleDown = isCurled(f.middle);
   const ringDown = isCurled(f.ring);
   const pinkyDown = isCurled(f.pinky);
-  const thumbDown = isCurled(f.thumb);
+  const thumbDown = !f.thumb.extended || f.thumb.strength < 0.35;
 
   const fingersUp = [indexUp, middleUp, ringUp, pinkyUp].filter(Boolean).length;
+  const pinch = isPinchPose(keypoints);
 
-  // --- Specific gestures first (never default to fist) ---
+  // Pinch pose (static) — motion tracker handles zoom in/out while pinching
+  if (pinch && !middleUp && !ringUp) {
+    return score("pinch", 0.88);
+  }
 
-  if (indexUp && middleUp && ringDown && pinkyDown && !thumbUp) {
+  if (middleUp && indexDown && ringDown && pinkyDown && thumbDown) {
+    return score("middle_finger", 0.88 + f.middle.strength * 0.1);
+  }
+
+  if (isRockOn(f)) {
+    return score("rock_on", 0.82);
+  }
+
+  if (indexUp && middleUp && ringDown && pinkyDown && thumbDown) {
     return score("peace", 0.85 + f.index.strength * 0.1);
   }
 
-  if (indexUp && middleDown && ringDown && pinkyDown && !thumbUp) {
+  if (indexUp && middleDown && ringDown && pinkyDown && thumbDown) {
     return score("pointing", 0.8 + f.index.strength * 0.15);
   }
 
-  if (thumbUp && indexDown && middleDown && ringDown && pinkyDown) {
+  if (isThumbUp(f.thumb) && indexDown && middleDown && ringDown && pinkyDown) {
     return score("thumbs_up", 0.85 + f.thumb.strength * 0.1);
+  }
+
+  if (isThumbDown(f.thumb) && indexDown && middleDown && ringDown && pinkyDown) {
+    return score("thumbs_down", 0.85 + f.thumb.strength * 0.1);
   }
 
   if (fingersUp >= 4 && indexUp && middleUp && ringUp && pinkyUp) {
@@ -186,8 +234,7 @@ export function classifyGesture(keypoints, handedness) {
     return score("fist", 0.9);
   }
 
-  // Relaxed fist: all fingers clearly not extended
-  if (!indexUp && !middleUp && !ringUp && !pinkyUp && !thumbUp && fingersUp === 0) {
+  if (!indexUp && !middleUp && !ringUp && !pinkyUp && !f.thumb.extended && fingersUp === 0) {
     const maxStrength = Math.max(f.index.strength, f.middle.strength, f.ring.strength, f.pinky.strength);
     if (maxStrength < 0.4) {
       return score("fist", 0.7);
@@ -197,20 +244,24 @@ export function classifyGesture(keypoints, handedness) {
   return null;
 }
 
-/**
- * @param {string} id
- * @param {number} confidence
- */
+/** @param {string} id @param {number} confidence */
 function score(id, confidence) {
   return { id, confidence: Math.min(1, confidence) };
 }
 
-const GESTURE_LABELS = {
+export const GESTURE_LABELS = {
   open_palm: "Open palm",
   fist: "Fist",
-  peace: "Peace sign",
-  pointing: "Pointing",
-  thumbs_up: "Thumbs up",
+  peace: "Peace sign ✌️",
+  pointing: "Pointing 👉",
+  thumbs_up: "Thumbs up 👍",
+  thumbs_down: "Thumbs down 👎",
+  middle_finger: "Middle finger 🖕",
+  rock_on: "Rock on 🤘",
+  pinch: "Pinch 🤏",
+  wave: "Wave 👋",
+  zoom_in: "Zoom in 🔍",
+  zoom_out: "Zoom out 🔎",
 };
 
 export function gestureLabel(id) {

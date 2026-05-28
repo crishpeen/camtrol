@@ -251,11 +251,37 @@ body {
   margin: 0;
 }
 
+.card--gestures {
+  font-size: 0.82rem;
+}
+
+.card--gestures h2 {
+  margin-bottom: 0.5rem;
+}
+
+.gesture-guide {
+  margin: 0;
+  padding: 0 0 0 1.1rem;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.gesture-guide li {
+  line-height: 1.35;
+}
+
+.gesture-guide strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .card--log {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 280px;
+  min-height: 220px;
 }
 
 .toggle-list {
