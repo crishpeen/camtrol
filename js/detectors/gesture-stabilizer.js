@@ -1,6 +1,6 @@
-const BUFFER_SIZE = 8;
-const MIN_AGREEMENT = 0.62;
-const MIN_CONFIDENCE = 0.55;
+const BUFFER_SIZE = 6;
+const MIN_AGREEMENT = 0.55;
+const MIN_CONFIDENCE = 0.5;
 
 /**
  * Temporal smoothing: require a gesture to win a majority of recent frames.
@@ -36,7 +36,7 @@ export function createGestureStabilizer() {
    */
   function pickStable(buffer) {
     const filled = buffer.filter(Boolean);
-    if (filled.length < 4) return null;
+    if (filled.length < 3) return null;
 
     /** @type {Map<string, { count: number, confidenceSum: number }>} */
     const votes = new Map();

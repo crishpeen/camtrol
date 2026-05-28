@@ -63,8 +63,8 @@
         <ul class="toggle-list">
           <li>
             <label class="toggle">
-              <input type="checkbox" id="toggle-motion" checked />
-              <span>Motion</span>
+              <input type="checkbox" id="toggle-motion" />
+              <span>Motion (pixel diff)</span>
             </label>
           </li>
           <li>
@@ -92,9 +92,10 @@
             </label>
           </li>
         </ul>
+        <p class="detector-hint">Gestures, face, and pose use TensorFlow.js. Motion is optional and stays quiet while you are in frame.</p>
         <label class="slider-label" for="motion-sensitivity">
           Motion sensitivity
-          <input type="range" id="motion-sensitivity" min="1" max="100" value="35" />
+          <input type="range" id="motion-sensitivity" min="1" max="100" value="22" />
         </label>
       </section>
 

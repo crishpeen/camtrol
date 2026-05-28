@@ -11,7 +11,8 @@ const GESTURE_COOLDOWN_MS = 1200;
 const MOTION_COOLDOWN_MS = 900;
 const TOUCH_COOLDOWN_MS = 700;
 const PRESENCE_COOLDOWN_MS = 2000;
-const MIN_GESTURE_CONFIDENCE = 0.55;
+const MIN_HAND_SCORE = 0.6;
+const MIN_GESTURE_CONFIDENCE = 0.5;
 
 const MOTION_IDS = new Set([
   "wave",
@@ -97,6 +98,8 @@ export async function createHandDetector(options) {
     const frameHeight = video.videoHeight || 480;
 
     for (const hand of hands) {
+      if (hand.score != null && hand.score < MIN_HAND_SCORE) continue;
+
       const side = hand.handedness ?? "hand";
       const key = side;
 

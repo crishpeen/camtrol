@@ -25,15 +25,18 @@ const overlay = createOverlay(overlayCanvas, video);
 let stream = null;
 let running = false;
 let rafId = 0;
+/** Pause pixel motion while hands/face/pose are visible (avoids flooding the log). */
+let mlSubjectsActiveUntil = 0;
 const motionDetector = createMotionDetector({
   onEvent: (e) => logDetection("motion", e.label, e.detail),
   getSensitivity: () => Number(motionSensitivity.value),
+  isSuppressed: () => Date.now() < mlSubjectsActiveUntil,
 });
 let handDetector = null;
 let poseDetector = null;
 let faceDetector = null;
 let frameCount = 0;
-const ML_EVERY_N_FRAMES = 2;
+let mlBusy = false;
 let lastHands = [];
 let lastPoses = [];
 let lastFaces = [];
@@ -42,7 +45,7 @@ setStatus("ready", "Ready — start the camera (ML models loading…)");
 eventLog.log({
   category: "system",
   label: "App started",
-  detail: "Camera works immediately; ML models load in the background",
+  detail: "Hands, face & pose load in the background — motion is off by default",
 });
 
 btnStart.addEventListener("click", () => startCamera());
@@ -195,6 +198,7 @@ async function startCamera() {
   lastPoses = [];
   lastFaces = [];
   frameCount = 0;
+  mlSubjectsActiveUntil = 0;
 
   running = true;
   setStatus("active", "Tracking active");
@@ -233,23 +237,46 @@ async function loop() {
   if (!running) return;
 
   frameCount += 1;
-  const runMl = frameCount % ML_EVERY_N_FRAMES === 0;
 
   try {
+    if (!mlBusy) {
+      mlBusy = true;
+      const mlTasks = [];
+
+      if (toggleHands.checked && handDetector) {
+        mlTasks.push(
+          handDetector.tick(video).then((hands) => {
+            lastHands = hands ?? [];
+          })
+        );
+      }
+
+      if (togglePose.checked && poseDetector) {
+        mlTasks.push(
+          poseDetector.tick(video).then((poses) => {
+            lastPoses = poses ?? [];
+          })
+        );
+      }
+
+      if (toggleFace.checked && faceDetector) {
+        mlTasks.push(
+          faceDetector.tick(video).then((faces) => {
+            lastFaces = faces ?? [];
+          })
+        );
+      }
+
+      if (mlTasks.length) {
+        await Promise.all(mlTasks);
+        markMlSubjectsActive();
+      }
+
+      mlBusy = false;
+    }
+
     if (toggleMotion.checked) {
       motionDetector.tick(video);
-    }
-
-    if (runMl && toggleHands.checked && handDetector) {
-      lastHands = (await handDetector.tick(video)) ?? [];
-    }
-
-    if (runMl && togglePose.checked && poseDetector) {
-      lastPoses = (await poseDetector.tick(video)) ?? [];
-    }
-
-    if (runMl && toggleFace.checked && faceDetector) {
-      lastFaces = (await faceDetector.tick(video)) ?? [];
     }
 
     const facesForOverlay =
@@ -262,10 +289,18 @@ async function loop() {
 
     overlay.draw(toggleHands.checked ? lastHands : [], togglePose.checked ? lastPoses : [], facesForOverlay);
   } catch (err) {
+    mlBusy = false;
     console.error("Detection loop error:", err);
   }
 
   rafId = requestAnimationFrame(loop);
+}
+
+/** @param {number} [holdMs] */
+function markMlSubjectsActive(holdMs = 900) {
+  if (lastHands.length || lastFaces.length || lastPoses.length) {
+    mlSubjectsActiveUntil = Math.max(mlSubjectsActiveUntil, Date.now() + holdMs);
+  }
 }
 
 function logDetection(category, label, detail) {

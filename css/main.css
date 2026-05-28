@@ -433,6 +433,13 @@ body {
   accent-color: var(--accent);
 }
 
+.detector-hint {
+  margin: 0 0 0.85rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 .slider-label {
   display: flex;
   flex-direction: column;

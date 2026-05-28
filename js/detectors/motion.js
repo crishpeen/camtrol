@@ -1,21 +1,25 @@
 const SAMPLE_WIDTH = 160;
 const SAMPLE_HEIGHT = 120;
-const COOLDOWN_MS = 400;
+const COOLDOWN_MS = 2000;
+const REQUIRED_STREAK = 4;
 
 /**
  * Pixel-diff motion detector (no ML). Downscales frames for performance.
+ * Requires sustained motion across several frames to reduce false positives.
  */
-export function createMotionDetector({ onEvent, getSensitivity }) {
+export function createMotionDetector({ onEvent, getSensitivity, isSuppressed }) {
   const canvas = document.createElement("canvas");
   canvas.width = SAMPLE_WIDTH;
   canvas.height = SAMPLE_HEIGHT;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   let previous = null;
   let lastEmit = 0;
+  let streak = 0;
 
   function reset() {
     previous = null;
     lastEmit = 0;
+    streak = 0;
   }
 
   /**
@@ -23,6 +27,10 @@ export function createMotionDetector({ onEvent, getSensitivity }) {
    */
   function tick(video) {
     if (video.readyState < 2) return;
+    if (isSuppressed?.()) {
+      streak = 0;
+      return;
+    }
 
     ctx.drawImage(video, 0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT);
     const frame = ctx.getImageData(0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT);
@@ -45,8 +53,19 @@ export function createMotionDetector({ onEvent, getSensitivity }) {
     const normalized = diff / (SAMPLE_WIDTH * SAMPLE_HEIGHT * 3 * 255);
     const threshold = sensitivityToThreshold(getSensitivity());
 
-    if (normalized > threshold && Date.now() - lastEmit > COOLDOWN_MS) {
-      lastEmit = Date.now();
+    if (normalized > threshold) {
+      streak += 1;
+    } else {
+      streak = 0;
+    }
+
+    const now = Date.now();
+    if (
+      streak >= REQUIRED_STREAK &&
+      now - lastEmit > COOLDOWN_MS
+    ) {
+      lastEmit = now;
+      streak = 0;
       const intensity = Math.round(normalized * 100);
       onEvent({
         label: "Motion detected",
@@ -59,8 +78,8 @@ export function createMotionDetector({ onEvent, getSensitivity }) {
   return { tick, reset };
 }
 
-/** Slider 1–100 → threshold ~0.02–0.12 */
+/** Slider 1–100 → threshold ~0.04–0.18 (higher = less sensitive at low slider values) */
 function sensitivityToThreshold(sliderValue) {
   const t = 1 - (sliderValue - 1) / 99;
-  return 0.02 + t * 0.1;
+  return 0.04 + t * 0.14;
 }

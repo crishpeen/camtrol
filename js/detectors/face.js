@@ -9,8 +9,8 @@ const tf = globalThis.tf;
 const PRESENCE_COOLDOWN_MS = 3000;
 const EXPRESSION_COOLDOWN_MS = 1400;
 const GAZE_ZONE_COOLDOWN_MS = 1100;
-const MIN_CONFIDENCE = 0.52;
-const MIN_GAZE_CONFIDENCE = 0.5;
+const MIN_CONFIDENCE = 0.48;
+const MIN_GAZE_CONFIDENCE = 0.45;
 
 /**
  * @param {{ onEvent: (e: { label: string, detail?: string }) => void, onFaces?: (faces: unknown[]) => void }} options
