@@ -1,6 +1,7 @@
-import * as poseDetection from "https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/+esm";
-import * as tf from "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.22.0/+esm";
-import "@tensorflow/tfjs-backend-webgl";
+/// <reference path="../../types/tf-globals.d.ts" />
+
+const poseDetection = globalThis.poseDetection;
+const tf = globalThis.tf;
 
 const COOLDOWN_MS = 1500;
 const MOVE_THRESHOLD = 0.08;
@@ -23,6 +24,10 @@ const KEYPOINT_NAMES = {
  * @param {{ onEvent: (e: { label: string, detail?: string }) => void, onPoses?: (poses: unknown[]) => void }} options
  */
 export async function createPoseDetector(options) {
+  if (!poseDetection || !tf) {
+    throw new Error("TensorFlow.js libraries did not load. Check your network connection.");
+  }
+
   await tf.setBackend("webgl");
   await tf.ready();
 

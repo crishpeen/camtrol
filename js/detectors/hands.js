@@ -1,8 +1,8 @@
-import * as handPoseDetection from "https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection@2.0.1/+esm";
-import * as tf from "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.22.0/+esm";
-import "@tensorflow/tfjs-backend-webgl";
-
+/// <reference path="../../types/tf-globals.d.ts" />
 import { classifyGesture, gestureLabel } from "./gestures.js";
+
+const handPoseDetection = globalThis.handPoseDetection;
+const tf = globalThis.tf;
 
 const GESTURE_COOLDOWN_MS = 1200;
 const PRESENCE_COOLDOWN_MS = 2000;
@@ -11,13 +11,16 @@ const PRESENCE_COOLDOWN_MS = 2000;
  * @param {{ onEvent: (e: { label: string, detail?: string }) => void, onHands?: (hands: unknown[]) => void }} options
  */
 export async function createHandDetector(options) {
+  if (!handPoseDetection || !tf) {
+    throw new Error("TensorFlow.js libraries did not load. Check your network connection.");
+  }
+
   await tf.setBackend("webgl");
   await tf.ready();
 
   const model = handPoseDetection.SupportedModels.MediaPipeHands;
   const detector = await handPoseDetection.createDetector(model, {
-    runtime: "mediapipe",
-    solutionPath: "https://cdn.jsdelivr.net/npm/@mediapipe/hands",
+    runtime: "tfjs",
     modelType: "lite",
     maxHands: 2,
   });

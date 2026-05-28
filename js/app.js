@@ -1,12 +1,9 @@
 import { createEventLog } from "./event-log.js";
 import { createMotionDetector } from "./detectors/motion.js";
-import { createHandDetector } from "./detectors/hands.js";
-import { createPoseDetector } from "./detectors/pose.js";
 import { createOverlay } from "./overlay.js";
 
 const video = /** @type {HTMLVideoElement} */ (document.getElementById("webcam"));
 const overlayCanvas = /** @type {HTMLCanvasElement} */ (document.getElementById("overlay"));
-const videoPlaceholder = document.getElementById("video-placeholder");
 const videoWrap = video.closest(".video-wrap");
 const statusDot = document.getElementById("status-dot");
 const statusText = document.getElementById("status-text");
@@ -26,82 +23,107 @@ const overlay = createOverlay(overlayCanvas, video);
 let stream = null;
 let running = false;
 let rafId = 0;
-/** @type {ReturnType<typeof createMotionDetector> | null} */
-let motionDetector = null;
-/** @type {Awaited<ReturnType<typeof createHandDetector>> | null} */
+/** @type {ReturnType<typeof createMotionDetector>} */
+const motionDetector = createMotionDetector({
+  onEvent: (e) => logDetection("motion", e.label, e.detail),
+  getSensitivity: () => Number(motionSensitivity.value),
+});
+/** @type {Awaited<ReturnType<typeof import("./detectors/hands.js").createHandDetector>> | null} */
 let handDetector = null;
-/** @type {Awaited<ReturnType<typeof createPoseDetector>> | null} */
+/** @type {Awaited<ReturnType<typeof import("./detectors/pose.js").createPoseDetector>> | null} */
 let poseDetector = null;
-let modelsReady = false;
+let handModelsReady = false;
+let poseModelsReady = false;
 let frameCount = 0;
 const ML_EVERY_N_FRAMES = 2;
 let lastHands = [];
 let lastPoses = [];
 
-motionDetector = createMotionDetector({
-  onEvent: (e) => logDetection("motion", e.label, e.detail),
-  getSensitivity: () => Number(motionSensitivity.value),
+setStatus("ready", "Ready — start the camera (ML models loading…)");
+eventLog.log({
+  category: "system",
+  label: "App started",
+  detail: "Camera works immediately; hand/pose models load in the background",
 });
 
 btnStart.addEventListener("click", () => startCamera());
 btnStop.addEventListener("click", () => stopCamera());
 btnClearLog.addEventListener("click", () => eventLog.clear());
 
-setStatus("loading", "Loading TensorFlow.js models…");
-loadModels()
-  .then(() => {
-    modelsReady = true;
-    setStatus("ready", "Models loaded — start the camera");
-    eventLog.log({
-      category: "system",
-      label: "Ready",
-      detail: "Motion, hand gesture, and pose detectors initialized",
-    });
-  })
-  .catch((err) => {
-    console.error(err);
-    setStatus("error", "Failed to load models");
-    eventLog.log({
-      category: "system",
-      label: "Model load failed",
-      detail: err instanceof Error ? err.message : String(err),
-    });
-  });
+loadModels();
 
 async function loadModels() {
-  const loaders = [];
+  if (!globalThis.tf?.setBackend) {
+    eventLog.log({
+      category: "system",
+      label: "TensorFlow.js missing",
+      detail: "Script bundles failed to load — motion detection still works",
+    });
+    if (toggleHands) toggleHands.disabled = true;
+    if (togglePose) togglePose.disabled = true;
+    return;
+  }
 
-  if (!handDetector) {
-    loaders.push(
-      createHandDetector({
+  const handPromise = (async () => {
+    try {
+      const { createHandDetector } = await import("./detectors/hands.js");
+      handDetector = await createHandDetector({
         onEvent: (e) => logDetection("hand", e.label, e.detail),
-        onHands: () => {},
-      }).then((d) => {
-        handDetector = d;
-      })
-    );
-  }
+      });
+      handModelsReady = true;
+      eventLog.log({
+        category: "system",
+        label: "Hand detector ready",
+        detail: "Gesture tracking enabled",
+      });
+    } catch (err) {
+      console.error(err);
+      eventLog.log({
+        category: "system",
+        label: "Hand detector failed",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      if (toggleHands) toggleHands.disabled = true;
+    }
+  })();
 
-  if (!poseDetector) {
-    loaders.push(
-      createPoseDetector({
+  const posePromise = (async () => {
+    try {
+      const { createPoseDetector } = await import("./detectors/pose.js");
+      poseDetector = await createPoseDetector({
         onEvent: (e) => logDetection("pose", e.label, e.detail),
-        onPoses: () => {},
-      }).then((d) => {
-        poseDetector = d;
-      })
-    );
-  }
+      });
+      poseModelsReady = true;
+      eventLog.log({
+        category: "system",
+        label: "Pose detector ready",
+        detail: "Body tracking enabled",
+      });
+    } catch (err) {
+      console.error(err);
+      eventLog.log({
+        category: "system",
+        label: "Pose detector failed",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      if (togglePose) togglePose.disabled = true;
+    }
+  })();
 
-  await Promise.all(loaders);
+  await Promise.allSettled([handPromise, posePromise]);
+
+  if (handModelsReady && poseModelsReady) {
+    setStatus(running ? "active" : "ready", running ? "Tracking active" : "All models loaded");
+  }
 }
 
 async function startCamera() {
-  if (!modelsReady) {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setStatus("error", "Camera not supported in this browser");
     eventLog.log({
       category: "system",
-      label: "Please wait",
-      detail: "Models are still loading",
+      label: "Camera unavailable",
+      detail: "getUserMedia is not supported (use HTTPS or localhost)",
     });
     return;
   }
@@ -128,7 +150,7 @@ async function startCamera() {
   btnStart.disabled = true;
   btnStop.disabled = false;
 
-  motionDetector?.reset();
+  motionDetector.reset();
   handDetector?.reset();
   poseDetector?.reset();
   lastHands = [];
@@ -175,7 +197,7 @@ async function loop() {
 
   try {
     if (toggleMotion.checked) {
-      motionDetector?.tick(video);
+      motionDetector.tick(video);
     }
 
     if (runMl && toggleHands.checked && handDetector) {
