@@ -178,7 +178,6 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transform: scaleX(-1);
 }
 
 #overlay {
@@ -188,6 +187,10 @@ body {
   height: 100%;
   object-fit: cover;
   pointer-events: none;
+}
+
+.video-wrap--mirror #webcam,
+.video-wrap--mirror #overlay {
   transform: scaleX(-1);
 }
 
@@ -259,6 +262,51 @@ body {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.camera-settings {
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.camera-settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.camera-settings__label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.camera-settings__select {
+  width: 100%;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.camera-settings__select:disabled {
+  opacity: 0.55;
+}
+
+.camera-settings__mirror {
+  margin: 0;
+}
+
+.camera-settings__hint {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--text-muted);
 }
 
 .btn {

@@ -1,6 +1,15 @@
 import { createEventLog } from "./event-log.js";
 import { createMotionDetector } from "./detectors/motion.js";
 import { createOverlay } from "./overlay.js";
+import {
+  applyMirrorToDom,
+  defaultMirrorForFacing,
+  fillCameraSelect,
+  openCameraStream,
+  refreshCameraList,
+  streamFacingMode,
+} from "./camera.js";
+import { flipHorizontalForMl, isMirrorPreview, setMirrorPreview } from "./mirror-state.js";
 
 const video = /** @type {HTMLVideoElement} */ (document.getElementById("webcam"));
 const overlayCanvas = /** @type {HTMLCanvasElement} */ (document.getElementById("overlay"));
@@ -18,6 +27,8 @@ const togglePose = document.getElementById("toggle-pose");
 const toggleFace = document.getElementById("toggle-face");
 const toggleGazeOverlay = document.getElementById("toggle-gaze-overlay");
 const motionSensitivity = document.getElementById("motion-sensitivity");
+const cameraSelect = /** @type {HTMLSelectElement | null} */ (document.getElementById("camera-select"));
+const toggleMirror = /** @type {HTMLInputElement | null} */ (document.getElementById("toggle-mirror"));
 
 const eventLog = createEventLog(eventLogEl, eventLogEmpty);
 const overlay = createOverlay(overlayCanvas, video);
@@ -40,6 +51,10 @@ let lastHands = [];
 let handRuntimeLabel = "";
 let lastPoses = [];
 let lastFaces = [];
+/** @type {MediaDeviceInfo[]} */
+let cameras = [];
+let selectedCameraId = "";
+let currentFacing = null;
 
 setStatus("ready", "Ready — start the camera (ML models loading…)");
 eventLog.log({
@@ -51,6 +66,18 @@ eventLog.log({
 btnStart.addEventListener("click", () => startCamera());
 btnStop.addEventListener("click", () => stopCamera());
 btnClearLog.addEventListener("click", () => eventLog.clear());
+
+toggleMirror?.addEventListener("change", () => {
+  setMirrorPreview(toggleMirror.checked);
+  applyMirrorToDom(videoWrap, isMirrorPreview());
+});
+
+cameraSelect?.addEventListener("change", () => {
+  selectedCameraId = cameraSelect.value;
+  if (running && selectedCameraId) {
+    switchCamera(selectedCameraId);
+  }
+});
 
 const eventStrip = document.getElementById("event-strip");
 const btnToggleLog = document.getElementById("btn-toggle-log");
@@ -201,38 +228,47 @@ async function loadFaceModel() {
   }
 }
 
-async function startCamera() {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    setStatus("error", "Camera not supported in this browser");
-    eventLog.log({
-      category: "system",
-      label: "Camera unavailable",
-      detail: "getUserMedia is not supported (use HTTPS or localhost)",
-    });
-    return;
+function applyMirrorForStream(mediaStream) {
+  currentFacing = streamFacingMode(mediaStream);
+  const mirrorOn = defaultMirrorForFacing(currentFacing);
+  setMirrorPreview(mirrorOn);
+  if (toggleMirror) toggleMirror.checked = mirrorOn;
+  applyMirrorToDom(videoWrap, isMirrorPreview());
+}
+
+async function updateCameraList() {
+  try {
+    const list = await refreshCameraList(selectedCameraId);
+    cameras = list.cameras;
+    fillCameraSelect(cameraSelect, cameras, selectedCameraId || cameras[0]?.deviceId);
+    if (!selectedCameraId && cameras[0]) selectedCameraId = cameras[0].deviceId;
+  } catch (err) {
+    console.warn("enumerateDevices failed:", err);
+  }
+}
+
+/**
+ * @param {{ deviceId?: string, facingMode?: string }} choice
+ */
+async function startCameraWithChoice(choice) {
+  if (stream) {
+    for (const track of stream.getTracks()) track.stop();
+    stream = null;
   }
 
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false,
-    });
-  } catch (err) {
-    setStatus("error", "Camera permission denied");
-    eventLog.log({
-      category: "system",
-      label: "Camera error",
-      detail: err instanceof Error ? err.message : String(err),
-    });
-    return;
-  }
+  stream = await openCameraStream(choice);
+  if (choice.deviceId) selectedCameraId = choice.deviceId;
 
   video.srcObject = stream;
   await video.play();
 
+  applyMirrorForStream(stream);
+  await updateCameraList();
+
   videoWrap?.classList.add("video-wrap--active");
   btnStart.disabled = true;
   btnStop.disabled = false;
+  if (cameraSelect) cameraSelect.disabled = cameras.length < 2;
 
   motionDetector.reset();
   handDetector?.reset();
@@ -246,13 +282,61 @@ async function startCamera() {
 
   running = true;
   setStatus("active", "Tracking active");
+
+  const track = stream.getVideoTracks()[0];
+  const label = track?.label ?? "camera";
   eventLog.log({
     category: "system",
     label: "Camera started",
-    detail: `${video.videoWidth}×${video.videoHeight}`,
+    detail: `${label} · ${video.videoWidth}×${video.videoHeight} · mirror ${isMirrorPreview() ? "on" : "off"}`,
   });
 
-  loop();
+  if (!rafId) loop();
+}
+
+async function startCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setStatus("error", "Camera not supported in this browser");
+    eventLog.log({
+      category: "system",
+      label: "Camera unavailable",
+      detail: "getUserMedia is not supported (use HTTPS or localhost)",
+    });
+    return;
+  }
+
+  const choice = selectedCameraId
+    ? { deviceId: selectedCameraId }
+    : { facingMode: "user" };
+
+  try {
+    await startCameraWithChoice(choice);
+  } catch (err) {
+    setStatus("error", "Camera permission denied");
+    eventLog.log({
+      category: "system",
+      label: "Camera error",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+async function switchCamera(deviceId) {
+  if (!deviceId || !running) return;
+  try {
+    await startCameraWithChoice({ deviceId });
+    eventLog.log({
+      category: "system",
+      label: "Camera switched",
+      detail: cameras.find((c) => c.deviceId === deviceId)?.label ?? deviceId,
+    });
+  } catch (err) {
+    eventLog.log({
+      category: "system",
+      label: "Camera switch failed",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 function stopCamera() {
@@ -266,8 +350,12 @@ function stopCamera() {
 
   video.srcObject = null;
   videoWrap?.classList.remove("video-wrap--active");
+  applyMirrorToDom(videoWrap, false);
+  setMirrorPreview(false);
+  if (toggleMirror) toggleMirror.checked = false;
   btnStart.disabled = false;
   btnStop.disabled = true;
+  if (cameraSelect) cameraSelect.disabled = cameras.length < 2;
   overlay.clear();
   lastHands = [];
   lastPoses = [];

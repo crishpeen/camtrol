@@ -55,6 +55,19 @@
         <button type="button" id="btn-start" class="btn btn--primary">Start camera</button>
         <button type="button" id="btn-stop" class="btn btn--secondary" disabled>Stop</button>
       </div>
+      <div class="camera-settings card">
+        <label class="camera-settings__field" for="camera-select">
+          <span class="camera-settings__label">Camera</span>
+          <select id="camera-select" class="camera-settings__select" disabled>
+            <option value="">Start camera to list devices</option>
+          </select>
+        </label>
+        <label class="toggle camera-settings__mirror">
+          <input type="checkbox" id="toggle-mirror" />
+          <span>Mirror selfie view</span>
+        </label>
+        <p class="camera-settings__hint">Mirror matches tracking to the preview. Turn off for a “true” view like a rear camera.</p>
+      </div>
     </section>
 
     <aside class="panel panel--sidebar">

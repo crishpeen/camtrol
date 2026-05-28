@@ -11,6 +11,7 @@ import {
 import { createMotionGestureTracker, motionGestureLabel } from "./gesture-motion.js";
 import { createTouchGestureTracker, touchGestureLabel } from "./touch-gestures.js";
 import { ensureMediapipeHandsScript } from "./mediapipe-loader.js";
+import { flipHorizontalForMl } from "../mirror-state.js";
 
 const handPoseDetection = globalThis.handPoseDetection;
 const tf = globalThis.tf;
@@ -187,7 +188,7 @@ export async function createHandDetector(options) {
 
     let hands;
     try {
-      hands = await detector.estimateHands(video, { flipHorizontal: true });
+      hands = await detector.estimateHands(video, { flipHorizontal: flipHorizontalForMl() });
     } catch (err) {
       console.error("estimateHands failed:", err);
       return [];
