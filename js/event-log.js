@@ -4,6 +4,7 @@ const typeClass = {
   motion: "event-item--motion",
   hand: "event-item--hand",
   pose: "event-item--pose",
+  face: "event-item--face",
   system: "event-item--system",
 };
 

@@ -262,6 +262,20 @@ export const GESTURE_LABELS = {
   wave: "Wave 👋",
   zoom_in: "Zoom in 🔍",
   zoom_out: "Zoom out 🔎",
+  tap: "Tap",
+  double_tap: "Double tap",
+  long_press: "Long press",
+  swipe_left: "Swipe left",
+  swipe_right: "Swipe right",
+  swipe_up: "Swipe up",
+  swipe_down: "Swipe down",
+  scroll_up: "Scroll up",
+  scroll_down: "Scroll down",
+  drag_up: "Drag up",
+  drag_down: "Drag down",
+  drag_left: "Drag left",
+  drag_right: "Drag right",
+  rotate: "Rotate (pinch twist)",
 };
 
 export function gestureLabel(id) {

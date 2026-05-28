@@ -13,6 +13,7 @@
   --motion: #a78bfa;
   --hand: #34d399;
   --pose: #38bdf8;
+  --face: #fbbf24;
   --radius: 10px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
@@ -253,6 +254,21 @@ body {
 
 .card--gestures {
   font-size: 0.82rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.gesture-guide__intro {
+  margin: 0.65rem 0 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.gesture-guide__intro:first-of-type {
+  margin-top: 0;
 }
 
 .card--gestures h2 {
@@ -381,6 +397,10 @@ body {
   border-left-color: var(--pose);
 }
 
+.event-item--face {
+  border-left-color: var(--face);
+}
+
 .event-item--system {
   border-left-color: var(--text-muted);
 }
@@ -409,6 +429,10 @@ body {
 
 .event-item__type--pose {
   color: var(--pose);
+}
+
+.event-item__type--face {
+  color: var(--face);
 }
 
 .event-item__detail {

@@ -6,7 +6,8 @@ A browser-based webcam tracker for **movement**, **hand gestures**, and **body p
 
 - **Motion detection** — frame-difference analysis (no ML model, very lightweight)
 - **Hand tracking** — MediaPipe Hands via `@tensorflow-models/hand-pose-detection`
-- **Gestures** — thumbs up/down, peace, point, middle finger, rock on, open palm, fist, pinch, pinch zoom in/out, wave
+- **Hand gestures** — poses (thumbs, peace, fist, etc.), touch-style (tap, swipe, scroll, long press, rotate), pinch zoom, wave
+- **Face expressions** — smile, grin, frown, surprise, grimace, squint, kiss, brow raises, and more
 - **Body pose** — MoveNet (single-person) via `@tensorflow-models/pose-detection`
 - **Event log** — timestamps, details, and `console` output for every detection
 - **Live overlay** — skeleton lines on the camera preview
@@ -53,6 +54,29 @@ Alternatively, set **Source** to **Deploy from a branch** and choose `main` with
 | Zoom out 🔎 | Pinch, then spread thumb and index apart |
 | Wave 👋 | Open hand, move side to side |
 
+### Touch-style hand gestures
+
+| Gesture | How to perform |
+|---------|----------------|
+| Tap | Quick touch with index tip (small movement) |
+| Double tap | Two taps within half a second |
+| Long press | Hold index/pinch position still ~0.7s |
+| Swipe | Fast flick left, right, up, or down |
+| Scroll up/down | Point with index, drag vertically |
+| Drag | Slow pan in any direction |
+| Rotate | Pinch thumb+index and twist |
+
+### Face expressions
+
+| Expression | How to perform |
+|------------|----------------|
+| Smile / grin | Mouth corners up |
+| Frown | Mouth corners down |
+| Surprise | Open mouth + raised brows |
+| Grimace | Squint + tight mouth |
+| Kiss / pucker | Lips forward, narrow |
+| Brows up / furrowed | Raise or lower eyebrows |
+
 ## Project structure
 
 ```
@@ -66,6 +90,9 @@ js/detectors/
   hands.js          # Hand + gesture detection
   gestures.js         # Static pose classification
   gesture-motion.js   # Wave & pinch zoom (temporal)
+  touch-gestures.js   # Tap, swipe, scroll, etc.
+  face.js             # Face mesh detector
+  face-expressions.js # Grimaces & expressions
   gesture-stabilizer.js
   pose.js           # MoveNet body pose
 ```

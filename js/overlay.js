@@ -55,19 +55,56 @@ export function createOverlay(canvas, video) {
     }
   }
 
+  const FACE_DRAW_INDICES = [
+    10, 33, 61, 133, 145, 159, 263, 291, 334, 362, 374, 386, 1, 13, 14, 152,
+  ];
+
   /**
    * @param {{ keypoints: { x: number, y: number, name?: string, score?: number }[] }[]} hands
    * @param {{ keypoints: { x: number, y: number, name?: string, score?: number }[] }[]} poses
+   * @param {{ keypoints?: { x: number, y: number }[], scaledMesh?: { x: number, y: number }[] }[]} faces
    */
-  function draw(hands = [], poses = []) {
+  function draw(hands = [], poses = [], faces = []) {
     resize();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    for (const face of faces) {
+      drawFace(face.keypoints ?? face.scaledMesh);
+    }
     for (const pose of poses) {
       drawPose(pose.keypoints);
     }
     for (const hand of hands) {
       drawHand(hand.keypoints);
+    }
+  }
+
+  /**
+   * @param {{ x: number, y: number }[] | undefined} keypoints
+   */
+  function drawFace(keypoints) {
+    if (!keypoints?.length) return;
+
+    ctx.strokeStyle = "rgba(251, 191, 36, 0.75)";
+    ctx.fillStyle = "rgba(251, 191, 36, 0.85)";
+    ctx.lineWidth = 1.5;
+
+    const lip = [61, 291, 13, 14];
+    ctx.beginPath();
+    for (const i of lip) {
+      const p = keypoints[i];
+      if (!p) continue;
+      if (i === lip[0]) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+
+    for (const i of FACE_DRAW_INDICES) {
+      const p = keypoints[i];
+      if (!p) continue;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 

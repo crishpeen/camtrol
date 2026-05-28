@@ -1,15 +1,37 @@
 /// <reference path="../../types/tf-globals.d.ts" />
-import { classifyGesture, gestureLabel, getFingerStates } from "./gestures.js";
+import { classifyGesture, gestureLabel, getFingerStates, isPinchPose } from "./gestures.js";
 import { createGestureStabilizer } from "./gesture-stabilizer.js";
 import { createMotionGestureTracker, motionGestureLabel } from "./gesture-motion.js";
+import { createTouchGestureTracker, touchGestureLabel } from "./touch-gestures.js";
 
 const handPoseDetection = globalThis.handPoseDetection;
 const tf = globalThis.tf;
 
 const GESTURE_COOLDOWN_MS = 1200;
 const MOTION_COOLDOWN_MS = 900;
+const TOUCH_COOLDOWN_MS = 700;
 const PRESENCE_COOLDOWN_MS = 2000;
 const MIN_GESTURE_CONFIDENCE = 0.55;
+
+const MOTION_IDS = new Set([
+  "wave",
+  "zoom_in",
+  "zoom_out",
+  "tap",
+  "double_tap",
+  "long_press",
+  "swipe_left",
+  "swipe_right",
+  "swipe_up",
+  "swipe_down",
+  "scroll_up",
+  "scroll_down",
+  "drag_up",
+  "drag_down",
+  "drag_left",
+  "drag_right",
+  "rotate",
+]);
 
 /**
  * @param {{ onEvent: (e: { label: string, detail?: string }) => void, onHands?: (hands: unknown[]) => void }} options
@@ -33,28 +55,27 @@ export async function createHandDetector(options) {
   const lastPresence = new Map();
   const stabilizer = createGestureStabilizer();
   const motionTracker = createMotionGestureTracker();
+  const touchTracker = createTouchGestureTracker();
 
   function reset() {
     lastGesture.clear();
     lastPresence.clear();
     stabilizer.reset();
     motionTracker.reset();
+    touchTracker.reset();
   }
 
-  /**
-   * @param {string} handKey
-   * @param {{ id: string, confidence: number, detail?: string }} gesture
-   * @param {(id: string) => string} labelFn
-   * @param {number} now
-   * @param {string} side
-   */
+  function gestureCooldown(id) {
+    if (id === "wave") return 2500;
+    if (id === "zoom_in" || id === "zoom_out") return MOTION_COOLDOWN_MS;
+    if (MOTION_IDS.has(id)) return TOUCH_COOLDOWN_MS;
+    return GESTURE_COOLDOWN_MS;
+  }
+
   function emitGesture(handKey, gesture, labelFn, now, side) {
     const gestureKey = `${handKey}:${gesture.id}`;
-    const cooldown = ["wave", "zoom_in", "zoom_out"].includes(gesture.id)
-      ? MOTION_COOLDOWN_MS
-      : GESTURE_COOLDOWN_MS;
+    if (now - (lastGesture.get(gestureKey) ?? 0) < gestureCooldown(gesture.id)) return;
 
-    if (now - (lastGesture.get(gestureKey) ?? 0) < cooldown) return;
     lastGesture.set(gestureKey, now);
 
     const confPct = Math.round(gesture.confidence * 100);
@@ -67,15 +88,13 @@ export async function createHandDetector(options) {
     });
   }
 
-  /**
-   * @param {HTMLVideoElement} video
-   */
   async function tick(video) {
     const hands = await detector.estimateHands(video, { flipHorizontal: true });
     options.onHands?.(hands);
 
     const now = Date.now();
     const frameWidth = video.videoWidth || 640;
+    const frameHeight = video.videoHeight || 480;
 
     for (const hand of hands) {
       const side = hand.handedness ?? "hand";
@@ -91,11 +110,28 @@ export async function createHandDetector(options) {
       }
 
       const fingerStates = getFingerStates(hand.keypoints, side);
+      const pointing =
+        fingerStates.index.extended &&
+        !fingerStates.middle.extended &&
+        fingerStates.middle.strength < 0.4;
+      const pinching = isPinchPose(hand.keypoints);
       const openPalm =
         fingerStates.index.extended &&
         fingerStates.middle.extended &&
         fingerStates.ring.extended &&
         fingerStates.pinky.extended;
+
+      const touch = touchTracker.push(hand.keypoints, now, frameWidth, frameHeight, {
+        handKey: key,
+        pointing,
+        pinching,
+        openPalm,
+      });
+
+      if (touch && touch.confidence >= MIN_GESTURE_CONFIDENCE) {
+        emitGesture(key, touch, touchGestureLabel, now, side);
+        continue;
+      }
 
       const motion = motionTracker.push(hand.keypoints, now, frameWidth, {
         openPalm,
@@ -110,7 +146,6 @@ export async function createHandDetector(options) {
       const stable = stabilizer.push(key, raw);
 
       if (stable && stable.confidence >= MIN_GESTURE_CONFIDENCE) {
-        // Skip static pinch when a zoom motion was just detected
         if (stable.id === "pinch" && motion && (motion.id === "zoom_in" || motion.id === "zoom_out")) {
           continue;
         }

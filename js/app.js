@@ -15,6 +15,7 @@ const eventLogEmpty = document.getElementById("event-log-empty");
 const toggleMotion = document.getElementById("toggle-motion");
 const toggleHands = document.getElementById("toggle-hands");
 const togglePose = document.getElementById("toggle-pose");
+const toggleFace = document.getElementById("toggle-face");
 const motionSensitivity = document.getElementById("motion-sensitivity");
 
 const eventLog = createEventLog(eventLogEl, eventLogEmpty);
@@ -23,27 +24,24 @@ const overlay = createOverlay(overlayCanvas, video);
 let stream = null;
 let running = false;
 let rafId = 0;
-/** @type {ReturnType<typeof createMotionDetector>} */
 const motionDetector = createMotionDetector({
   onEvent: (e) => logDetection("motion", e.label, e.detail),
   getSensitivity: () => Number(motionSensitivity.value),
 });
-/** @type {Awaited<ReturnType<typeof import("./detectors/hands.js").createHandDetector>> | null} */
 let handDetector = null;
-/** @type {Awaited<ReturnType<typeof import("./detectors/pose.js").createPoseDetector>> | null} */
 let poseDetector = null;
-let handModelsReady = false;
-let poseModelsReady = false;
+let faceDetector = null;
 let frameCount = 0;
 const ML_EVERY_N_FRAMES = 2;
 let lastHands = [];
 let lastPoses = [];
+let lastFaces = [];
 
 setStatus("ready", "Ready — start the camera (ML models loading…)");
 eventLog.log({
   category: "system",
   label: "App started",
-  detail: "Camera works immediately; hand/pose models load in the background",
+  detail: "Camera works immediately; ML models load in the background",
 });
 
 btnStart.addEventListener("click", () => startCamera());
@@ -61,6 +59,7 @@ async function loadModels() {
     });
     if (toggleHands) toggleHands.disabled = true;
     if (togglePose) togglePose.disabled = true;
+    if (toggleFace) toggleFace.disabled = true;
     return;
   }
 
@@ -70,11 +69,10 @@ async function loadModels() {
       handDetector = await createHandDetector({
         onEvent: (e) => logDetection("hand", e.label, e.detail),
       });
-      handModelsReady = true;
       eventLog.log({
         category: "system",
         label: "Hand detector ready",
-        detail: "Gesture tracking enabled",
+        detail: "Poses + touch gestures enabled",
       });
     } catch (err) {
       console.error(err);
@@ -93,7 +91,6 @@ async function loadModels() {
       poseDetector = await createPoseDetector({
         onEvent: (e) => logDetection("pose", e.label, e.detail),
       });
-      poseModelsReady = true;
       eventLog.log({
         category: "system",
         label: "Pose detector ready",
@@ -110,11 +107,39 @@ async function loadModels() {
     }
   })();
 
-  await Promise.allSettled([handPromise, posePromise]);
+  const facePromise = (async () => {
+    if (!globalThis.faceLandmarksDetection) {
+      eventLog.log({
+        category: "system",
+        label: "Face model unavailable",
+        detail: "face-landmarks-detection script missing from page",
+      });
+      if (toggleFace) toggleFace.disabled = true;
+      return;
+    }
+    try {
+      const { createFaceDetector } = await import("./detectors/face.js");
+      faceDetector = await createFaceDetector({
+        onEvent: (e) => logDetection("face", e.label, e.detail),
+      });
+      eventLog.log({
+        category: "system",
+        label: "Face detector ready",
+        detail: "Expressions & grimaces enabled",
+      });
+    } catch (err) {
+      console.error(err);
+      eventLog.log({
+        category: "system",
+        label: "Face detector failed",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      if (toggleFace) toggleFace.disabled = true;
+    }
+  })();
 
-  if (handModelsReady && poseModelsReady) {
-    setStatus(running ? "active" : "ready", running ? "Tracking active" : "All models loaded");
-  }
+  await Promise.allSettled([handPromise, posePromise, facePromise]);
+  setStatus(running ? "active" : "ready", running ? "Tracking active" : "Models loaded");
 }
 
 async function startCamera() {
@@ -153,8 +178,10 @@ async function startCamera() {
   motionDetector.reset();
   handDetector?.reset();
   poseDetector?.reset();
+  faceDetector?.reset();
   lastHands = [];
   lastPoses = [];
+  lastFaces = [];
   frameCount = 0;
 
   running = true;
@@ -184,6 +211,7 @@ function stopCamera() {
   overlay.clear();
   lastHands = [];
   lastPoses = [];
+  lastFaces = [];
 
   setStatus("ready", "Camera stopped");
   eventLog.log({ category: "system", label: "Camera stopped" });
@@ -208,9 +236,14 @@ async function loop() {
       lastPoses = (await poseDetector.tick(video)) ?? [];
     }
 
+    if (runMl && toggleFace.checked && faceDetector) {
+      lastFaces = (await faceDetector.tick(video)) ?? [];
+    }
+
     overlay.draw(
       toggleHands.checked ? lastHands : [],
-      togglePose.checked ? lastPoses : []
+      togglePose.checked ? lastPoses : [],
+      toggleFace.checked ? lastFaces : []
     );
   } catch (err) {
     console.error("Detection loop error:", err);
@@ -223,10 +256,6 @@ function logDetection(category, label, detail) {
   eventLog.log({ category, label, detail });
 }
 
-/**
- * @param {"loading" | "ready" | "active" | "error"} state
- * @param {string} text
- */
 function setStatus(state, text) {
   statusText.textContent = text;
   statusDot.className = "status-dot";

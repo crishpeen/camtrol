@@ -55,6 +55,12 @@
               <span>Body pose</span>
             </label>
           </li>
+          <li>
+            <label class="toggle">
+              <input type="checkbox" id="toggle-face" checked />
+              <span>Face expressions</span>
+            </label>
+          </li>
         </ul>
         <label class="slider-label" for="motion-sensitivity">
           Motion sensitivity
@@ -64,18 +70,27 @@
 
       <section class="card card--gestures" aria-label="Supported gestures">
         <h2>Gesture guide</h2>
+        <p class="gesture-guide__intro">Hand poses</p>
         <ul class="gesture-guide">
           <li><strong>👍 / 👎</strong> Thumbs up or down</li>
-          <li><strong>✌️</strong> Peace — index + middle</li>
-          <li><strong>👉</strong> Point — index only</li>
-          <li><strong>🖕</strong> Middle finger only</li>
-          <li><strong>🤘</strong> Rock on — index + pinky</li>
-          <li><strong>✋</strong> Open palm</li>
-          <li><strong>✊</strong> Fist</li>
-          <li><strong>🤏</strong> Pinch thumb + index</li>
-          <li><strong>🔍</strong> Pinch &amp; close fingers → zoom in</li>
-          <li><strong>🔎</strong> Pinch &amp; spread fingers → zoom out</li>
-          <li><strong>👋</strong> Wave hand side to side</li>
+          <li><strong>✌️ 🤘 🖕 ✋ ✊ 👉</strong> Peace, rock on, middle finger, palm, fist, point</li>
+          <li><strong>🤏 🔍 🔎</strong> Pinch, zoom in, zoom out</li>
+          <li><strong>👋</strong> Wave side to side</li>
+        </ul>
+        <p class="gesture-guide__intro">Touch-style (index finger or pinch)</p>
+        <ul class="gesture-guide">
+          <li><strong>Tap / double tap</strong> Quick touch in place</li>
+          <li><strong>Long press</strong> Hold finger still ~0.7s</li>
+          <li><strong>Swipe</strong> Fast flick left, right, up, or down</li>
+          <li><strong>Scroll</strong> Drag index up/down slowly</li>
+          <li><strong>Drag</strong> Slow pan in any direction</li>
+          <li><strong>Rotate</strong> Pinch and twist thumb/index</li>
+        </ul>
+        <p class="gesture-guide__intro">Face expressions</p>
+        <ul class="gesture-guide">
+          <li><strong>😊 😁 😞 😮 😲</strong> Smile, grin, frown, surprise</li>
+          <li><strong>😬 😑 😗</strong> Grimace, squint, kiss/pucker</li>
+          <li><strong>🤨 😠</strong> Brows up or furrowed</li>
         </ul>
       </section>
 
@@ -99,6 +114,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection@2.0.1/dist/hand-pose-detection.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@1.0.6/dist/face-landmarks-detection.min.js"></script>
   <script>
     window.addEventListener("error", function (e) {
       var el = document.getElementById("fatal-error");
