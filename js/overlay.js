@@ -64,6 +64,19 @@ export function createOverlay(canvas, video) {
    * @param {{ keypoints: { x: number, y: number, name?: string, score?: number }[] }[]} poses
    * @param {{ keypoints?: { x: number, y: number }[], scaledMesh?: { x: number, y: number }[] }[]} faces
    */
+  /**
+   * Landmarks may be normalized (0–1) or pixel coords depending on runtime.
+   * @param {{ x: number, y: number }} p
+   */
+  function toCanvasPoint(p) {
+    const w = canvas.width || 1;
+    const h = canvas.height || 1;
+    if (p.x <= 1.5 && p.y <= 1.5 && p.x >= -0.1 && p.y >= -0.1) {
+      return { x: p.x * w, y: p.y * h };
+    }
+    return { x: p.x, y: p.y };
+  }
+
   function draw(hands = [], poses = [], faces = []) {
     resize();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -194,13 +207,13 @@ export function createOverlay(canvas, video) {
   function drawHand(keypoints) {
     if (!keypoints?.length) return;
 
-    ctx.strokeStyle = "rgba(52, 211, 153, 0.85)";
-    ctx.lineWidth = 2;
-    ctx.fillStyle = "rgba(52, 211, 153, 0.9)";
+    ctx.strokeStyle = "rgba(52, 211, 153, 0.95)";
+    ctx.lineWidth = 3;
+    ctx.fillStyle = "rgba(52, 211, 153, 1)";
 
     for (const [a, b] of HAND_CONNECTIONS) {
-      const p1 = keypoints[a];
-      const p2 = keypoints[b];
+      const p1 = toCanvasPoint(keypoints[a]);
+      const p2 = toCanvasPoint(keypoints[b]);
       if (!p1 || !p2) continue;
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
@@ -209,8 +222,9 @@ export function createOverlay(canvas, video) {
     }
 
     for (const p of keypoints) {
+      const pt = toCanvasPoint(p);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
       ctx.fill();
     }
   }

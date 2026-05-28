@@ -22,6 +22,7 @@ const MIN_GESTURE_CONFIDENCE = 0.58;
 const MIN_TOUCH_CONFIDENCE = 0.52;
 const MIN_MOTION_CONFIDENCE = 0.52;
 const KEYPOINT_SMOOTH_ALPHA = 0.45;
+const MEDIAPIPE_HANDS_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/hands";
 
 const MOTION_IDS = new Set([
   "wave",
@@ -43,32 +44,73 @@ const MOTION_IDS = new Set([
   "rotate",
 ]);
 
-function useLiteHandModel() {
+function isMobileDevice() {
   if (typeof matchMedia === "function" && matchMedia("(max-width: 900px)").matches) {
     return true;
   }
-  const cores = navigator.hardwareConcurrency ?? 8;
-  return cores <= 4;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent ?? "");
+}
+
+function useLiteHandModel() {
+  return isMobileDevice();
 }
 
 /**
  * @param {{ onEvent: (e: { label: string, detail?: string }) => void, onHands?: (hands: unknown[]) => void }} options
  */
 export async function createHandDetector(options) {
-  if (!handPoseDetection || !tf) {
-    throw new Error("TensorFlow.js libraries did not load. Check your network connection.");
+  if (!handPoseDetection) {
+    throw new Error("hand-pose-detection script did not load.");
   }
 
-  await tf.setBackend("webgl");
-  await tf.ready();
-
-  const modelType = useLiteHandModel() ? "lite" : "full";
   const model = handPoseDetection.SupportedModels.MediaPipeHands;
-  const detector = await handPoseDetection.createDetector(model, {
-    runtime: "tfjs",
-    modelType,
-    maxHands: 2,
-  });
+  const modelType = useLiteHandModel() ? "lite" : "full";
+  let runtime = "tfjs";
+  let detector;
+
+  if (isMobileDevice() && globalThis.Hands) {
+    try {
+      detector = await handPoseDetection.createDetector(model, {
+        runtime: "mediapipe",
+        solutionPath: MEDIAPIPE_HANDS_CDN,
+        modelType,
+        maxHands: 2,
+      });
+      runtime = "mediapipe";
+    } catch (err) {
+      console.warn("MediaPipe hands runtime failed, falling back to TF.js:", err);
+    }
+  }
+
+  if (!detector) {
+    if (!tf?.setBackend) {
+      throw new Error("TensorFlow.js did not load — required for hand detection.");
+    }
+
+    const backends = isMobileDevice() ? ["webgl", "wasm", "cpu"] : ["webgl", "cpu"];
+    let lastErr = null;
+
+    for (const backend of backends) {
+      try {
+        await tf.setBackend(backend);
+        await tf.ready();
+        detector = await handPoseDetection.createDetector(model, {
+          runtime: "tfjs",
+          modelType,
+          maxHands: 2,
+        });
+        runtime = `tfjs/${backend}`;
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`Hand model failed on ${backend}:`, err);
+      }
+    }
+
+    if (!detector) {
+      throw lastErr instanceof Error ? lastErr : new Error("Could not initialize hand detector");
+    }
+  }
 
   const lastGesture = new Map();
   const lastPresence = new Map();
@@ -82,6 +124,7 @@ export async function createHandDetector(options) {
   const motionTracker = createMotionGestureTracker();
   const touchTracker = createTouchGestureTracker();
   let zeroHandFrames = 0;
+  let lastDiagLog = 0;
 
   function reset() {
     lastGesture.clear();
@@ -118,23 +161,34 @@ export async function createHandDetector(options) {
   }
 
   async function tick(video) {
-    const hands = await detector.estimateHands(video, { flipHorizontal: true });
+    if (video.readyState < 2 || !video.videoWidth) {
+      return [];
+    }
+
+    let hands;
+    try {
+      hands = await detector.estimateHands(video, { flipHorizontal: true });
+    } catch (err) {
+      console.error("estimateHands failed:", err);
+      return [];
+    }
+
     options.onHands?.(hands);
 
     const now = Date.now();
-    const frameWidth = video.videoWidth || 640;
-    const frameHeight = video.videoHeight || 480;
+    const frameWidth = video.videoWidth;
+    const frameHeight = video.videoHeight;
     const activeKeys = new Set();
     /** @type {typeof hands} */
     const overlayHands = [];
 
     if (!hands.length) {
       zeroHandFrames += 1;
-      if (zeroHandFrames === 90) {
+      if (zeroHandFrames === 60 && now - lastDiagLog > 8000) {
+        lastDiagLog = now;
         options.onEvent({
           label: "No hand in frame",
-          detail:
-            "Model sees no hand — try brighter light, fill the frame with your hand, or move closer",
+          detail: `Runtime ${runtime} — move hand closer, brighter light, plain background`,
         });
       }
     } else {
@@ -167,7 +221,7 @@ export async function createHandDetector(options) {
         const score = hand.score != null ? ` (${(hand.score * 100).toFixed(0)}%)` : "";
         options.onEvent({
           label: `${capitalize(side)} hand detected`,
-          detail: `${keypoints.length} keypoints${score} · quality ${Math.round(quality.score * 100)}% · ${modelType} model`,
+          detail: `${keypoints.length} keypoints${score} · ${runtime}/${modelType}`,
         });
       }
 
@@ -233,7 +287,7 @@ export async function createHandDetector(options) {
     detector.dispose?.();
   }
 
-  return { tick, reset, dispose, modelType };
+  return { tick, reset, dispose, modelType, runtime };
 }
 
 function capitalize(s) {

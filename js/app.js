@@ -36,8 +36,8 @@ let handDetector = null;
 let poseDetector = null;
 let faceDetector = null;
 let frameCount = 0;
-let mlBusy = false;
 let lastHands = [];
+let handRuntimeLabel = "";
 let lastPoses = [];
 let lastFaces = [];
 
@@ -63,7 +63,21 @@ btnToggleLog?.addEventListener("click", () => {
   btnToggleLog.textContent = expanded ? "▼" : "▶";
 });
 
+applyMobileDefaults();
 loadModels();
+
+function applyMobileDefaults() {
+  const mobile =
+    typeof matchMedia === "function" && matchMedia("(max-width: 900px)").matches;
+  if (!mobile) return;
+  if (togglePose) togglePose.checked = false;
+  if (toggleFace) toggleFace.checked = false;
+  eventLog.log({
+    category: "system",
+    label: "Mobile mode",
+    detail: "Pose & face off by default so hand tracking gets GPU priority",
+  });
+}
 
 async function loadModels() {
   if (!globalThis.tf?.setBackend) {
@@ -78,29 +92,29 @@ async function loadModels() {
     return;
   }
 
-  const handPromise = (async () => {
-    try {
-      const { createHandDetector } = await import("./detectors/hands.js");
-      handDetector = await createHandDetector({
-        onEvent: (e) => logDetection("hand", e.label, e.detail),
-      });
-      const modelHint =
-        handDetector && "modelType" in handDetector ? String(handDetector.modelType) : "full";
-      eventLog.log({
-        category: "system",
-        label: "Hand detector ready",
-        detail: `MediaPipe ${modelHint} — hold gestures ~0.5s`,
-      });
-    } catch (err) {
-      console.error(err);
-      eventLog.log({
-        category: "system",
-        label: "Hand detector failed",
-        detail: err instanceof Error ? err.message : String(err),
-      });
-      if (toggleHands) toggleHands.disabled = true;
-    }
-  })();
+  try {
+    const { createHandDetector } = await import("./detectors/hands.js");
+    handDetector = await createHandDetector({
+      onEvent: (e) => logDetection("hand", e.label, e.detail),
+    });
+    handRuntimeLabel =
+      handDetector && "runtime" in handDetector
+        ? `${handDetector.runtime}/${handDetector.modelType}`
+        : "ready";
+    eventLog.log({
+      category: "system",
+      label: "Hand detector ready",
+      detail: `${handRuntimeLabel} — hold gestures ~0.5s`,
+    });
+  } catch (err) {
+    console.error(err);
+    eventLog.log({
+      category: "system",
+      label: "Hand detector failed",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    if (toggleHands) toggleHands.disabled = true;
+  }
 
   const posePromise = (async () => {
     try {
@@ -155,7 +169,7 @@ async function loadModels() {
     }
   })();
 
-  await Promise.allSettled([handPromise, posePromise, facePromise]);
+  await Promise.allSettled([posePromise, facePromise]);
   setStatus(running ? "active" : "ready", running ? "Tracking active" : "Models loaded");
 }
 
@@ -238,40 +252,27 @@ function stopCamera() {
 async function loop() {
   if (!running) return;
 
-  frameCount += 1;
-
   try {
-    if (!mlBusy) {
-      mlBusy = true;
+    if (toggleHands.checked && handDetector) {
+      lastHands = (await handDetector.tick(video)) ?? [];
+    }
 
-      // Hands run alone first — on phones, parallel TF models often drop hand inference.
-      if (toggleHands.checked && handDetector) {
-        lastHands = (await handDetector.tick(video)) ?? [];
-      }
+    frameCount += 1;
+    const runBodyFace = frameCount % 2 === 0;
 
-      const otherMl = [];
-      if (togglePose.checked && poseDetector) {
-        otherMl.push(
-          poseDetector.tick(video).then((poses) => {
-            lastPoses = poses ?? [];
-          })
-        );
-      }
-      if (toggleFace.checked && faceDetector) {
-        otherMl.push(
-          faceDetector.tick(video).then((faces) => {
-            lastFaces = faces ?? [];
-          })
-        );
-      }
-      if (otherMl.length) await Promise.all(otherMl);
-
-      if (toggleHands.checked || otherMl.length) markMlSubjectsActive();
-      mlBusy = false;
+    if (runBodyFace && togglePose.checked && poseDetector) {
+      lastPoses = (await poseDetector.tick(video)) ?? [];
+    }
+    if (runBodyFace && toggleFace.checked && faceDetector) {
+      lastFaces = (await faceDetector.tick(video)) ?? [];
     }
 
     if (toggleMotion.checked) {
       motionDetector.tick(video);
+    }
+
+    if (lastHands.length || lastFaces.length || lastPoses.length) {
+      markMlSubjectsActive();
     }
 
     const facesForOverlay =
@@ -283,8 +284,13 @@ async function loop() {
         : [];
 
     overlay.draw(toggleHands.checked ? lastHands : [], togglePose.checked ? lastPoses : [], facesForOverlay);
+
+    if (running && toggleHands.checked && handDetector) {
+      const n = lastHands.length;
+      const base = "Tracking active";
+      setStatus("active", n ? `${base} · ${n} hand${n > 1 ? "s" : ""}` : `${base} · scanning for hands…`);
+    }
   } catch (err) {
-    mlBusy = false;
     console.error("Detection loop error:", err);
   }
 
