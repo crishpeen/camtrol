@@ -49,6 +49,17 @@ btnStart.addEventListener("click", () => startCamera());
 btnStop.addEventListener("click", () => stopCamera());
 btnClearLog.addEventListener("click", () => eventLog.clear());
 
+const eventHud = document.getElementById("event-hud");
+const btnToggleHud = document.getElementById("btn-toggle-hud");
+
+btnToggleHud?.addEventListener("click", () => {
+  const collapsed = eventHud?.classList.toggle("event-hud--collapsed");
+  const expanded = !collapsed;
+  btnToggleHud.setAttribute("aria-expanded", String(expanded));
+  btnToggleHud.title = expanded ? "Hide event list" : "Show event list";
+  btnToggleHud.textContent = expanded ? "▼" : "▶";
+});
+
 loadModels();
 
 async function loadModels() {
