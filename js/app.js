@@ -92,15 +92,21 @@ async function loadModels() {
     return;
   }
 
+  const { createHandDetector, isMobileDevice } = await import("./detectors/hands.js");
+  const mobile = isMobileDevice();
+
   try {
-    const { createHandDetector } = await import("./detectors/hands.js");
     handDetector = await createHandDetector({
       onEvent: (e) => logDetection("hand", e.label, e.detail),
+      onInit: (detail) =>
+        eventLog.log({ category: "system", label: "Hands loading", detail }),
     });
-    handRuntimeLabel =
-      handDetector && "runtime" in handDetector
-        ? `${handDetector.runtime}/${handDetector.modelType}`
-        : "ready";
+    handRuntimeLabel = handDetector?.runtime ?? "unknown";
+    if (handDetector?.initNotes?.length) {
+      for (const note of handDetector.initNotes) {
+        eventLog.log({ category: "system", label: "Hands init", detail: note });
+      }
+    }
     eventLog.log({
       category: "system",
       label: "Hand detector ready",
@@ -116,61 +122,83 @@ async function loadModels() {
     if (toggleHands) toggleHands.disabled = true;
   }
 
-  const posePromise = (async () => {
-    try {
-      const { createPoseDetector } = await import("./detectors/pose.js");
-      poseDetector = await createPoseDetector({
-        onEvent: (e) => logDetection("pose", e.label, e.detail),
-      });
-      eventLog.log({
-        category: "system",
-        label: "Pose detector ready",
-        detail: "Body tracking enabled",
-      });
-    } catch (err) {
-      console.error(err);
-      eventLog.log({
-        category: "system",
-        label: "Pose detector failed",
-        detail: err instanceof Error ? err.message : String(err),
-      });
-      if (togglePose) togglePose.disabled = true;
-    }
-  })();
+  if (!mobile) {
+    await Promise.allSettled([loadPoseModel(), loadFaceModel()]);
+  } else {
+    togglePose?.addEventListener("change", () => {
+      if (togglePose.checked) loadPoseModel();
+    });
+    toggleFace?.addEventListener("change", () => {
+      if (toggleFace.checked) loadFaceModel();
+    });
+  }
 
-  const facePromise = (async () => {
-    if (!globalThis.faceLandmarksDetection) {
-      eventLog.log({
-        category: "system",
-        label: "Face model unavailable",
-        detail: "face-landmarks-detection script missing from page",
-      });
-      if (toggleFace) toggleFace.disabled = true;
-      return;
-    }
-    try {
-      const { createFaceDetector } = await import("./detectors/face.js");
-      faceDetector = await createFaceDetector({
-        onEvent: (e) => logDetection("face", e.label, e.detail),
-      });
-      eventLog.log({
-        category: "system",
-        label: "Face detector ready",
-        detail: "Expressions, grimaces & iris gaze enabled",
-      });
-    } catch (err) {
-      console.error(err);
-      eventLog.log({
-        category: "system",
-        label: "Face detector failed",
-        detail: err instanceof Error ? err.message : String(err),
-      });
-      if (toggleFace) toggleFace.disabled = true;
-    }
-  })();
-
-  await Promise.allSettled([posePromise, facePromise]);
   setStatus(running ? "active" : "ready", running ? "Tracking active" : "Models loaded");
+}
+
+let poseLoading = false;
+let faceLoading = false;
+
+async function loadPoseModel() {
+  if (poseDetector || poseLoading) return;
+  poseLoading = true;
+  try {
+    const { createPoseDetector } = await import("./detectors/pose.js");
+    poseDetector = await createPoseDetector({
+      onEvent: (e) => logDetection("pose", e.label, e.detail),
+    });
+    eventLog.log({
+      category: "system",
+      label: "Pose detector ready",
+      detail: "Body tracking enabled",
+    });
+  } catch (err) {
+    console.error(err);
+    eventLog.log({
+      category: "system",
+      label: "Pose detector failed",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    if (togglePose) togglePose.checked = false;
+  } finally {
+    poseLoading = false;
+  }
+}
+
+async function loadFaceModel() {
+  if (faceDetector || faceLoading) return;
+  faceLoading = true;
+  if (!globalThis.faceLandmarksDetection) {
+    eventLog.log({
+      category: "system",
+      label: "Face model unavailable",
+      detail: "face-landmarks-detection script missing from page",
+    });
+    if (toggleFace) toggleFace.checked = false;
+    faceLoading = false;
+    return;
+  }
+  try {
+    const { createFaceDetector } = await import("./detectors/face.js");
+    faceDetector = await createFaceDetector({
+      onEvent: (e) => logDetection("face", e.label, e.detail),
+    });
+    eventLog.log({
+      category: "system",
+      label: "Face detector ready",
+      detail: "Expressions, grimaces & iris gaze enabled",
+    });
+  } catch (err) {
+    console.error(err);
+    eventLog.log({
+      category: "system",
+      label: "Face detector failed",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    if (toggleFace) toggleFace.checked = false;
+  } finally {
+    faceLoading = false;
+  }
 }
 
 async function startCamera() {

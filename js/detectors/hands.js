@@ -10,6 +10,7 @@ import {
 } from "./hand-quality.js";
 import { createMotionGestureTracker, motionGestureLabel } from "./gesture-motion.js";
 import { createTouchGestureTracker, touchGestureLabel } from "./touch-gestures.js";
+import { ensureMediapipeHandsScript } from "./mediapipe-loader.js";
 
 const handPoseDetection = globalThis.handPoseDetection;
 const tf = globalThis.tf;
@@ -22,7 +23,7 @@ const MIN_GESTURE_CONFIDENCE = 0.58;
 const MIN_TOUCH_CONFIDENCE = 0.52;
 const MIN_MOTION_CONFIDENCE = 0.52;
 const KEYPOINT_SMOOTH_ALPHA = 0.45;
-const MEDIAPIPE_HANDS_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/hands";
+const MEDIAPIPE_HANDS_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240";
 
 const MOTION_IDS = new Set([
   "wave",
@@ -44,7 +45,7 @@ const MOTION_IDS = new Set([
   "rotate",
 ]);
 
-function isMobileDevice() {
+export function isMobileDevice() {
   if (typeof matchMedia === "function" && matchMedia("(max-width: 900px)").matches) {
     return true;
   }
@@ -56,29 +57,42 @@ function useLiteHandModel() {
 }
 
 /**
- * @param {{ onEvent: (e: { label: string, detail?: string }) => void, onHands?: (hands: unknown[]) => void }} options
+ * @param {{ onEvent: (e: { label: string, detail?: string }) => void, onHands?: (hands: unknown[]) => void, onInit?: (detail: string) => void }} options
  */
 export async function createHandDetector(options) {
   if (!handPoseDetection) {
     throw new Error("hand-pose-detection script did not load.");
   }
 
+  const logInit = (detail) => options.onInit?.(detail);
+
   const model = handPoseDetection.SupportedModels.MediaPipeHands;
   const modelType = useLiteHandModel() ? "lite" : "full";
   let runtime = "tfjs";
   let detector;
+  /** @type {string[]} */
+  const initNotes = [];
 
-  if (isMobileDevice() && globalThis.Hands) {
-    try {
-      detector = await handPoseDetection.createDetector(model, {
-        runtime: "mediapipe",
-        solutionPath: MEDIAPIPE_HANDS_CDN,
-        modelType,
-        maxHands: 2,
-      });
-      runtime = "mediapipe";
-    } catch (err) {
-      console.warn("MediaPipe hands runtime failed, falling back to TF.js:", err);
+  if (isMobileDevice()) {
+    logInit("Loading MediaPipe Hands (recommended on phone)…");
+    const mpReady = await ensureMediapipeHandsScript();
+    initNotes.push(mpReady ? "MediaPipe script loaded" : "MediaPipe script failed to load");
+
+    if (mpReady) {
+      try {
+        detector = await handPoseDetection.createDetector(model, {
+          runtime: "mediapipe",
+          solutionPath: MEDIAPIPE_HANDS_CDN,
+          modelType,
+          maxHands: 2,
+        });
+        runtime = `mediapipe/${modelType}`;
+        initNotes.push("Using MediaPipe WASM runtime");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        initNotes.push(`MediaPipe init failed: ${msg}`);
+        console.warn("MediaPipe hands runtime failed:", err);
+      }
     }
   }
 
@@ -87,11 +101,14 @@ export async function createHandDetector(options) {
       throw new Error("TensorFlow.js did not load — required for hand detection.");
     }
 
-    const backends = isMobileDevice() ? ["webgl", "wasm", "cpu"] : ["webgl", "cpu"];
+    const backends = isMobileDevice()
+      ? ["wasm", "cpu", "webgl"]
+      : ["webgl", "wasm", "cpu"];
     let lastErr = null;
 
     for (const backend of backends) {
       try {
+        logInit(`Trying TensorFlow.js ${backend}…`);
         await tf.setBackend(backend);
         await tf.ready();
         detector = await handPoseDetection.createDetector(model, {
@@ -99,10 +116,13 @@ export async function createHandDetector(options) {
           modelType,
           maxHands: 2,
         });
-        runtime = `tfjs/${backend}`;
+        runtime = `tfjs/${backend}/${modelType}`;
+        initNotes.push(`Using TF.js ${backend}`);
         break;
       } catch (err) {
         lastErr = err;
+        const msg = err instanceof Error ? err.message : String(err);
+        initNotes.push(`${backend} failed: ${msg}`);
         console.warn(`Hand model failed on ${backend}:`, err);
       }
     }
@@ -188,7 +208,7 @@ export async function createHandDetector(options) {
         lastDiagLog = now;
         options.onEvent({
           label: "No hand in frame",
-          detail: `Runtime ${runtime} — move hand closer, brighter light, plain background`,
+          detail: `${runtime} — fill frame with hand, good light`,
         });
       }
     } else {
@@ -221,7 +241,7 @@ export async function createHandDetector(options) {
         const score = hand.score != null ? ` (${(hand.score * 100).toFixed(0)}%)` : "";
         options.onEvent({
           label: `${capitalize(side)} hand detected`,
-          detail: `${keypoints.length} keypoints${score} · ${runtime}/${modelType}`,
+          detail: `${keypoints.length} keypoints${score} · ${runtime}`,
         });
       }
 
@@ -287,7 +307,7 @@ export async function createHandDetector(options) {
     detector.dispose?.();
   }
 
-  return { tick, reset, dispose, modelType, runtime };
+  return { tick, reset, dispose, modelType, runtime, initNotes };
 }
 
 function capitalize(s) {
