@@ -401,3 +401,13 @@ body {
 .footer p {
   margin: 0;
 }
+
+.fatal-error {
+  margin: 0 1.5rem 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  color: #fecaca;
+  font-size: 0.9rem;
+}
