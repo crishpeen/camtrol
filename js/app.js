@@ -9,7 +9,7 @@ import {
   refreshCameraList,
   streamFacingMode,
 } from "./camera.js";
-import { flipHorizontalForMl, isMirrorPreview, setMirrorPreview } from "./mirror-state.js";
+import { isMirrorPreview, setMirrorPreview } from "./mirror-state.js";
 
 const video = /** @type {HTMLVideoElement} */ (document.getElementById("webcam"));
 const overlayCanvas = /** @type {HTMLCanvasElement} */ (document.getElementById("overlay"));
@@ -70,6 +70,7 @@ btnClearLog.addEventListener("click", () => eventLog.clear());
 toggleMirror?.addEventListener("change", () => {
   setMirrorPreview(toggleMirror.checked);
   applyMirrorToDom(videoWrap, isMirrorPreview());
+  resetTrackingState();
 });
 
 cameraSelect?.addEventListener("change", () => {
@@ -226,6 +227,17 @@ async function loadFaceModel() {
   } finally {
     faceLoading = false;
   }
+}
+
+function resetTrackingState() {
+  motionDetector.reset();
+  handDetector?.reset();
+  poseDetector?.reset();
+  faceDetector?.reset();
+  lastHands = [];
+  lastPoses = [];
+  lastFaces = [];
+  overlay.clear();
 }
 
 function applyMirrorForStream(mediaStream) {

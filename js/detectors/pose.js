@@ -1,6 +1,4 @@
 /// <reference path="../../types/tf-globals.d.ts" />
-import { flipHorizontalForMl } from "../mirror-state.js";
-
 const poseDetection = globalThis.poseDetection;
 const tf = globalThis.tf;
 
@@ -51,7 +49,7 @@ export async function createPoseDetector(options) {
    * @param {HTMLVideoElement} video
    */
   async function tick(video) {
-    const poses = await detector.estimatePoses(video, { flipHorizontal: flipHorizontalForMl() });
+    const poses = await detector.estimatePoses(video, { flipHorizontal: false });
     options.onPoses?.(poses);
 
     const now = Date.now();

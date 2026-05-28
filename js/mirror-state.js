@@ -1,4 +1,4 @@
-/** Shared mirror flag: CSS preview + ML flipHorizontal must stay in sync. */
+/** Mirror only affects video CSS + overlay X flip (ML always uses raw camera coords). */
 
 let mirrorPreview = false;
 
@@ -9,9 +9,4 @@ export function isMirrorPreview() {
 /** @param {boolean} on */
 export function setMirrorPreview(on) {
   mirrorPreview = on;
-}
-
-/** ML detectors use the same flag as the mirrored CSS preview. */
-export function flipHorizontalForMl() {
-  return mirrorPreview;
 }

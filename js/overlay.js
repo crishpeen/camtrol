@@ -1,3 +1,5 @@
+import { isMirrorPreview } from "./mirror-state.js";
+
 const HAND_CONNECTIONS = [
   [0, 1],
   [1, 2],
@@ -71,10 +73,19 @@ export function createOverlay(canvas, video) {
   function toCanvasPoint(p) {
     const w = canvas.width || 1;
     const h = canvas.height || 1;
+    let x;
+    let y;
     if (p.x <= 1.5 && p.y <= 1.5 && p.x >= -0.1 && p.y >= -0.1) {
-      return { x: p.x * w, y: p.y * h };
+      x = p.x * w;
+      y = p.y * h;
+    } else {
+      x = p.x;
+      y = p.y;
     }
-    return { x: p.x, y: p.y };
+    if (isMirrorPreview()) {
+      x = w - x;
+    }
+    return { x, y };
   }
 
   function draw(hands = [], poses = [], faces = []) {
@@ -107,16 +118,18 @@ export function createOverlay(canvas, video) {
     const lip = [61, 291, 13, 14];
     ctx.beginPath();
     for (const i of lip) {
-      const p = keypoints[i];
-      if (!p) continue;
+      const raw = keypoints[i];
+      if (!raw) continue;
+      const p = toCanvasPoint(raw);
       if (i === lip[0]) ctx.moveTo(p.x, p.y);
       else ctx.lineTo(p.x, p.y);
     }
     ctx.stroke();
 
     for (const i of FACE_DRAW_INDICES) {
-      const p = keypoints[i];
-      if (!p) continue;
+      const raw = keypoints[i];
+      if (!raw) continue;
+      const p = toCanvasPoint(raw);
       ctx.beginPath();
       ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
       ctx.fill();
@@ -134,28 +147,39 @@ export function createOverlay(canvas, video) {
 
     drawGazeGrid(w, h);
 
-    for (const eye of [gaze.eyes.left, gaze.eyes.right]) {
+    const left = gaze.eyes.left;
+    const right = gaze.eyes.right;
+    const lc = toCanvasPoint(left.center);
+    const rc = toCanvasPoint(right.center);
+    const li = toCanvasPoint(left.iris);
+    const ri = toCanvasPoint(right.iris);
+    const gp = toCanvasPoint(gaze.point);
+
+    for (const [center, iris, eye] of [
+      [lc, li, left],
+      [rc, ri, right],
+    ]) {
       ctx.strokeStyle = "rgba(147, 197, 253, 0.9)";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.ellipse(eye.center.x, eye.center.y, eye.eyeW * 0.55, eye.eyeH * 0.65, 0, 0, Math.PI * 2);
+      ctx.ellipse(center.x, center.y, eye.eyeW * 0.55, eye.eyeH * 0.65, 0, 0, Math.PI * 2);
       ctx.stroke();
 
       ctx.fillStyle = "rgba(96, 165, 250, 1)";
       ctx.beginPath();
-      ctx.arc(eye.iris.x, eye.iris.y, Math.max(3, eye.eyeW * 0.12), 0, Math.PI * 2);
+      ctx.arc(iris.x, iris.y, Math.max(3, eye.eyeW * 0.12), 0, Math.PI * 2);
       ctx.fill();
     }
 
-    const bridgeX = (gaze.eyes.left.center.x + gaze.eyes.right.center.x) / 2;
-    const bridgeY = (gaze.eyes.left.center.y + gaze.eyes.right.center.y) / 2;
+    const bridgeX = (lc.x + rc.x) / 2;
+    const bridgeY = (lc.y + rc.y) / 2;
 
     ctx.strokeStyle = "rgba(251, 191, 36, 0.55)";
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 6]);
     ctx.beginPath();
     ctx.moveTo(bridgeX, bridgeY);
-    ctx.lineTo(gaze.point.x, gaze.point.y);
+    ctx.lineTo(gp.x, gp.y);
     ctx.stroke();
     ctx.setLineDash([]);
 
@@ -163,21 +187,21 @@ export function createOverlay(canvas, video) {
     ctx.fillStyle = "rgba(250, 204, 21, 0.35)";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(gaze.point.x, gaze.point.y, 14, 0, Math.PI * 2);
+    ctx.arc(gp.x, gp.y, 14, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.moveTo(gaze.point.x - 18, gaze.point.y);
-    ctx.lineTo(gaze.point.x + 18, gaze.point.y);
-    ctx.moveTo(gaze.point.x, gaze.point.y - 18);
-    ctx.lineTo(gaze.point.x, gaze.point.y + 18);
+    ctx.moveTo(gp.x - 18, gp.y);
+    ctx.lineTo(gp.x + 18, gp.y);
+    ctx.moveTo(gp.x, gp.y - 18);
+    ctx.lineTo(gp.x, gp.y + 18);
     ctx.stroke();
 
     ctx.font = "600 12px system-ui, sans-serif";
     ctx.fillStyle = "rgba(250, 204, 21, 0.95)";
     ctx.textAlign = "center";
-    ctx.fillText(gaze.zone.label, gaze.point.x, Math.max(14, gaze.point.y - 22));
+    ctx.fillText(gaze.zone.label, gp.x, Math.max(14, gp.y - 22));
   }
 
   function drawGazeGrid(w, h) {
@@ -245,16 +269,19 @@ export function createOverlay(canvas, video) {
       const p1 = byName[a];
       const p2 = byName[b];
       if (!p1 || !p2 || (p1.score ?? 1) < 0.3 || (p2.score ?? 1) < 0.3) continue;
+      const c1 = toCanvasPoint(p1);
+      const c2 = toCanvasPoint(p2);
       ctx.beginPath();
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
+      ctx.moveTo(c1.x, c1.y);
+      ctx.lineTo(c2.x, c2.y);
       ctx.stroke();
     }
 
     for (const kp of keypoints) {
       if ((kp.score ?? 1) < 0.3) continue;
+      const p = toCanvasPoint(kp);
       ctx.beginPath();
-      ctx.arc(kp.x, kp.y, 4, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
       ctx.fill();
     }
   }

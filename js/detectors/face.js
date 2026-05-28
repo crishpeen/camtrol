@@ -2,7 +2,6 @@
 import { classifyFaceExpression, faceExpressionLabel } from "./face-expressions.js";
 import { createGestureStabilizer } from "./gesture-stabilizer.js";
 import { estimateGaze, resetGazeSmoothing, gazeZoneLabel } from "./gaze.js";
-import { flipHorizontalForMl } from "../mirror-state.js";
 
 const faceLandmarksDetection = globalThis.faceLandmarksDetection;
 const tf = globalThis.tf;
@@ -46,7 +45,7 @@ export async function createFaceDetector(options) {
   }
 
   async function tick(video) {
-    const faces = await detector.estimateFaces(video, { flipHorizontal: flipHorizontalForMl() });
+    const faces = await detector.estimateFaces(video, { flipHorizontal: false });
     options.onFaces?.(faces);
 
     const now = Date.now();

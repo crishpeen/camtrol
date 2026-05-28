@@ -11,7 +11,6 @@ import {
 import { createMotionGestureTracker, motionGestureLabel } from "./gesture-motion.js";
 import { createTouchGestureTracker, touchGestureLabel } from "./touch-gestures.js";
 import { ensureMediapipeHandsScript } from "./mediapipe-loader.js";
-import { flipHorizontalForMl } from "../mirror-state.js";
 
 const handPoseDetection = globalThis.handPoseDetection;
 const tf = globalThis.tf;
@@ -21,7 +20,8 @@ const MOTION_COOLDOWN_MS = 900;
 const TOUCH_COOLDOWN_MS = 700;
 const PRESENCE_COOLDOWN_MS = 2500;
 const MIN_GESTURE_CONFIDENCE = 0.58;
-const MIN_TOUCH_CONFIDENCE = 0.52;
+const MIN_TOUCH_CONFIDENCE = 0.62;
+const TAP_GESTURE_IDS = new Set(["tap", "double_tap"]);
 const MIN_MOTION_CONFIDENCE = 0.52;
 const KEYPOINT_SMOOTH_ALPHA = 0.45;
 const MEDIAPIPE_HANDS_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240";
@@ -188,7 +188,7 @@ export async function createHandDetector(options) {
 
     let hands;
     try {
-      hands = await detector.estimateHands(video, { flipHorizontal: flipHorizontalForMl() });
+      hands = await detector.estimateHands(video, { flipHorizontal: false });
     } catch (err) {
       console.error("estimateHands failed:", err);
       return [];
@@ -258,16 +258,12 @@ export async function createHandDetector(options) {
         fingerStates.ring.extended &&
         fingerStates.pinky.extended;
 
-      const touch = touchTracker.push(keypoints, now, frameWidth, frameHeight, {
-        handKey: key,
-        pointing,
-        pinching,
-        openPalm,
-      });
+      const raw = classifyGestureWithQuality(metricsKp, side, quality.score);
+      const stable = stabilizer.push(key, raw);
+      const toEmit = poseEmitter.consider(key, stable);
 
-      if (touch && touch.confidence >= MIN_TOUCH_CONFIDENCE) {
-        emitGesture(key, touch, touchGestureLabel, now, side);
-        poseEmitter.unlock(key);
+      if (toEmit && toEmit.confidence >= MIN_GESTURE_CONFIDENCE) {
+        emitGesture(key, toEmit, gestureLabel, now, side);
         continue;
       }
 
@@ -282,15 +278,19 @@ export async function createHandDetector(options) {
         continue;
       }
 
-      const raw = classifyGestureWithQuality(metricsKp, side, quality.score);
-      const stable = stabilizer.push(key, raw);
-      const toEmit = poseEmitter.consider(key, stable);
+      const touch = touchTracker.push(keypoints, now, frameWidth, frameHeight, {
+        handKey: key,
+        pointing,
+        pinching,
+        openPalm,
+      });
 
-      if (toEmit && toEmit.confidence >= MIN_GESTURE_CONFIDENCE) {
-        if (toEmit.id === "pinch" && motion && (motion.id === "zoom_in" || motion.id === "zoom_out")) {
-          continue;
+      if (touch && touch.confidence >= MIN_TOUCH_CONFIDENCE) {
+        if (TAP_GESTURE_IDS.has(touch.id)) {
+          if (!pointing || touch.confidence < 0.88) continue;
         }
-        emitGesture(key, toEmit, gestureLabel, now, side);
+        emitGesture(key, touch, touchGestureLabel, now, side);
+        poseEmitter.unlock(key);
       }
     }
 

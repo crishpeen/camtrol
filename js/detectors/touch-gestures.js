@@ -10,22 +10,22 @@ const LM = { WRIST: 0, THUMB_TIP: 4, INDEX_TIP: 8, MIDDLE_MCP: 9 };
 const TRAIL_MS = 600;
 const SWIPE_MAX_MS = 450;
 const SWIPE_MIN_DIST = 0.1;
-const TAP_MAX_DIST = 0.045;
-const TAP_MAX_MS = 280;
-const DOUBLE_TAP_MS = 500;
+const TAP_MAX_DIST = 0.028;
+const TAP_MAX_MS = 200;
+const DOUBLE_TAP_MS = 450;
 const LONG_PRESS_MS = 700;
 const LONG_PRESS_MAX_MOVE = 0.035;
 const SCROLL_MIN_DY = 0.12;
 const SCROLL_MIN_MS = 350;
 const ROTATE_MIN_DEG = 22;
 const COOLDOWN = {
-  swipe: 800,
-  tap: 400,
-  double_tap: 700,
-  long_press: 1200,
-  scroll: 700,
-  rotate: 900,
-  drag: 600,
+  swipe: 1100,
+  tap: 2800,
+  double_tap: 3200,
+  long_press: 1400,
+  scroll: 900,
+  rotate: 1100,
+  drag: 1000,
 };
 
 /**
@@ -116,11 +116,13 @@ export function createTouchGestureTracker() {
     const swipeHit = trackSwipe(s, now, canEmit);
     if (swipeHit) return swipeHit;
 
-    const dragHit = trackDrag(s, now, canEmit);
-    if (dragHit) return dragHit;
+    if (hints.pointing) {
+      const dragHit = trackDrag(s, now, canEmit);
+      if (dragHit) return dragHit;
 
-    const tapHit = trackTap(s, p, now, canEmit);
-    if (tapHit) return tapHit;
+      const tapHit = trackTap(s, p, now, canEmit);
+      if (tapHit) return tapHit;
+    }
 
     return null;
   }
@@ -241,13 +243,13 @@ export function createTouchGestureTracker() {
   }
 
   function trackTap(s, p, now, canEmit) {
-    if (s.trail.length < 3) return null;
+    if (s.trail.length < 4) return null;
     const recent = s.trail.filter((pt) => now - pt.t < TAP_MAX_MS);
-    if (recent.length < 2) return null;
+    if (recent.length < 3) return null;
 
     const d = dist(recent[recent.length - 1], recent[0]);
     const dt = recent[recent.length - 1].t - recent[0].t;
-    if (d > TAP_MAX_DIST || dt > TAP_MAX_MS) return null;
+    if (d > TAP_MAX_DIST || dt > TAP_MAX_MS || dt < 80) return null;
 
     if (now - s.lastTap < DOUBLE_TAP_MS && s.lastTapPos && dist(p, s.lastTapPos) < TAP_MAX_DIST * 1.5) {
       s.tapCount += 1;

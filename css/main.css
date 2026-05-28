@@ -189,8 +189,7 @@ body {
   pointer-events: none;
 }
 
-.video-wrap--mirror #webcam,
-.video-wrap--mirror #overlay {
+.video-wrap--mirror #webcam {
   transform: scaleX(-1);
 }
 
