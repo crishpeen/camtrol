@@ -3,6 +3,7 @@ import { classifyFaceExpression, faceExpressionLabel } from "./face-expressions.
 import { createGestureStabilizer } from "./gesture-stabilizer.js";
 import { estimateGaze, resetGazeSmoothing, gazeZoneLabel } from "./gaze.js";
 import { gazePrefKey } from "../gesture-preferences.js";
+import { isWebGazerEngine } from "../gaze-engine.js";
 
 const faceLandmarksDetection = globalThis.faceLandmarksDetection;
 const tf = globalThis.tf;
@@ -72,7 +73,8 @@ export async function createFaceDetector(options) {
       const keypoints = face.keypoints ?? face.scaledMesh;
       if (!keypoints?.length) continue;
 
-      const gaze = estimateGaze(keypoints, frameWidth, frameHeight);
+      const gaze =
+        isWebGazerEngine() ? null : estimateGaze(keypoints, frameWidth, frameHeight);
       if (gaze) {
         face.gaze = gaze;
         const gazeKey = gazePrefKey(gaze.zone.id);

@@ -11,6 +11,7 @@ import {
 } from "./camera.js";
 import { isMirrorPreview, setMirrorPreview } from "./mirror-state.js";
 import { getGesturePreferences } from "./gesture-preferences.js";
+import { getGazeEngine, isWebGazerEngine, setGazeEngine } from "./gaze-engine.js";
 
 const gesturePrefs = getGesturePreferences();
 
@@ -29,6 +30,10 @@ const toggleHands = document.getElementById("toggle-hands");
 const togglePose = document.getElementById("toggle-pose");
 const toggleFace = document.getElementById("toggle-face");
 const toggleGazeOverlay = document.getElementById("toggle-gaze-overlay");
+const gazeEngineSelect = /** @type {HTMLSelectElement | null} */ (
+  document.getElementById("gaze-engine-select")
+);
+const webgazerHint = document.getElementById("webgazer-hint");
 const motionSensitivity = document.getElementById("motion-sensitivity");
 const cameraSelect = /** @type {HTMLSelectElement | null} */ (document.getElementById("camera-select"));
 const toggleMirror = /** @type {HTMLInputElement | null} */ (document.getElementById("toggle-mirror"));
@@ -49,6 +54,9 @@ const motionDetector = createMotionDetector({
 let handDetector = null;
 let poseDetector = null;
 let faceDetector = null;
+/** @type {ReturnType<import("./detectors/gaze-webgazer.js").createWebGazerGaze> | null} */
+let webGazerGaze = null;
+let webGazerStarting = false;
 let frameCount = 0;
 let lastHands = [];
 let handRuntimeLabel = "";
@@ -63,7 +71,9 @@ setStatus("ready", "Ready — start the camera (ML models loading…)");
 eventLog.log({
   category: "system",
   label: "App started",
-  detail: "Hands, face & pose load in the background — motion is off by default",
+  detail: isWebGazerEngine()
+    ? "WebGazer gaze engine — start camera, then click around the page to calibrate"
+    : "Hands, face & pose load in the background — motion is off by default",
 });
 
 btnStart.addEventListener("click", () => startCamera());
@@ -95,8 +105,43 @@ btnToggleLog?.addEventListener("click", () => {
 });
 
 applyMobileDefaults();
+initGazeEngineUI();
 initGesturePreferencesUI();
 loadModels();
+
+function initGazeEngineUI() {
+  if (!gazeEngineSelect) return;
+  gazeEngineSelect.value = getGazeEngine();
+  syncWebGazerHint();
+
+  gazeEngineSelect.addEventListener("change", () => {
+    const next = gazeEngineSelect.value === "webgazer" ? "webgazer" : "mediapipe";
+    if (next === getGazeEngine()) return;
+    setGazeEngine(next);
+    eventLog.log({
+      category: "system",
+      label: "Gaze engine changed",
+      detail:
+        next === "webgazer"
+          ? "WebGazer — reload to apply (page will refresh)"
+          : "MediaPipe iris — reload to apply (page will refresh)",
+    });
+    window.setTimeout(() => window.location.reload(), 350);
+  });
+}
+
+function syncWebGazerHint() {
+  const webgazerOn = isWebGazerEngine();
+  if (webgazerHint) webgazerHint.hidden = !webgazerOn;
+  if (toggleFace && webgazerOn) {
+    toggleFace.checked = false;
+    toggleFace.disabled = true;
+    toggleFace.title = "Face expressions need the MediaPipe gaze engine";
+  } else if (toggleFace) {
+    toggleFace.disabled = false;
+    toggleFace.title = "";
+  }
+}
 
 function initGesturePreferencesUI() {
   const root = document.getElementById("gesture-toggles-root");
@@ -209,6 +254,7 @@ async function loadPoseModel() {
 }
 
 async function loadFaceModel() {
+  if (isWebGazerEngine()) return;
   if (faceDetector || faceLoading) return;
   faceLoading = true;
   if (!globalThis.faceLandmarksDetection) {
@@ -250,10 +296,42 @@ function resetTrackingState() {
   handDetector?.reset();
   poseDetector?.reset();
   faceDetector?.reset();
+  webGazerGaze?.reset();
   lastHands = [];
   lastPoses = [];
   lastFaces = [];
   overlay.clear();
+}
+
+async function ensureWebGazerGaze() {
+  if (!isWebGazerEngine() || !stream || webGazerGaze || webGazerStarting) return;
+  webGazerStarting = true;
+  try {
+    const { createWebGazerGaze } = await import("./detectors/gaze-webgazer.js");
+    webGazerGaze = createWebGazerGaze({
+      onEvent: (e) => logDetection("face", e.label, e.detail),
+      onStatus: (detail) =>
+        eventLog.log({ category: "system", label: "WebGazer", detail }),
+      isGestureEnabled: (id) => gesturePrefs.isEnabled(id),
+      getMirrorDisplay: () => isMirrorPreview(),
+    });
+    await webGazerGaze.start(video, stream);
+    eventLog.log({
+      category: "system",
+      label: "WebGazer ready",
+      detail: "Look at the cursor and click around the page to train gaze mapping",
+    });
+  } catch (err) {
+    console.error(err);
+    webGazerGaze = null;
+    eventLog.log({
+      category: "system",
+      label: "WebGazer failed",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    webGazerStarting = false;
+  }
 }
 
 function applyMirrorForStream(mediaStream) {
@@ -279,6 +357,11 @@ async function updateCameraList() {
  * @param {{ deviceId?: string, facingMode?: string }} choice
  */
 async function startCameraWithChoice(choice) {
+  if (webGazerGaze) {
+    await webGazerGaze.dispose();
+    webGazerGaze = null;
+  }
+
   if (stream) {
     for (const track of stream.getTracks()) track.stop();
     stream = null;
@@ -318,6 +401,10 @@ async function startCameraWithChoice(choice) {
     label: "Camera started",
     detail: `${label} · ${video.videoWidth}×${video.videoHeight} · mirror ${isMirrorPreview() ? "on" : "off"}`,
   });
+
+  if (isWebGazerEngine()) {
+    await ensureWebGazerGaze();
+  }
 
   if (!rafId) loop();
 }
@@ -377,6 +464,9 @@ function stopCamera() {
   }
 
   video.srcObject = null;
+  webGazerGaze?.dispose();
+  webGazerGaze = null;
+  webGazerStarting = false;
   videoWrap?.classList.remove("video-wrap--active");
   applyMirrorToDom(videoWrap, false);
   setMirrorPreview(false);
@@ -407,8 +497,13 @@ async function loop() {
     if (runBodyFace && togglePose.checked && poseDetector) {
       lastPoses = (await poseDetector.tick(video)) ?? [];
     }
-    if (runBodyFace && toggleFace.checked && faceDetector) {
+    if (runBodyFace && toggleFace.checked && faceDetector && !isWebGazerEngine()) {
       lastFaces = (await faceDetector.tick(video)) ?? [];
+    }
+
+    let webGazerOverlayGaze = null;
+    if (isWebGazerEngine() && webGazerGaze) {
+      webGazerOverlayGaze = webGazerGaze.tick(video);
     }
 
     if (toggleMotion.checked) {
@@ -419,13 +514,16 @@ async function loop() {
       markMlSubjectsActive();
     }
 
-    const facesForOverlay =
-      toggleFace.checked && lastFaces.length
-        ? lastFaces.map((f) => ({
-            ...f,
-            gaze: toggleGazeOverlay?.checked !== false ? f.gaze : null,
-          }))
-        : [];
+    const showGaze = toggleGazeOverlay?.checked !== false;
+    let facesForOverlay = [];
+    if (webGazerOverlayGaze && showGaze) {
+      facesForOverlay = [{ gaze: webGazerOverlayGaze }];
+    } else if (toggleFace.checked && lastFaces.length) {
+      facesForOverlay = lastFaces.map((f) => ({
+        ...f,
+        gaze: showGaze ? f.gaze : null,
+      }));
+    }
 
     overlay.draw(toggleHands.checked ? lastHands : [], togglePose.checked ? lastPoses : [], facesForOverlay);
 

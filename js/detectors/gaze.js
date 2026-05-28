@@ -58,7 +58,7 @@ function eyeGaze(keypoints, eye) {
  * @param {number} w
  * @param {number} h
  */
-function screenZone(x, y, w, h) {
+export function screenZone(x, y, w, h) {
   const col = x < w / 3 ? "left" : x < (2 * w) / 3 ? "center" : "right";
   const row = y < h / 3 ? "top" : y < (2 * h) / 3 ? "middle" : "bottom";
 
@@ -143,6 +143,18 @@ export function estimateGaze(keypoints, frameWidth, frameHeight) {
 
 export function resetGazeSmoothing() {
   smoothedPoint = null;
+}
+
+/** @param {{ x: number, y: number }} point @param {number} frameWidth @param {number} frameHeight */
+export function gazeFromPoint(point, frameWidth, frameHeight) {
+  const zone = screenZone(point.x, point.y, frameWidth, frameHeight);
+  return {
+    point,
+    zone,
+    confidence: 0.72,
+    hasIrisLandmarks: false,
+    source: "mediapipe",
+  };
 }
 
 export function gazeZoneLabel(zoneId) {

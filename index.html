@@ -105,6 +105,16 @@
             </label>
           </li>
         </ul>
+        <label class="camera-settings__field" for="gaze-engine-select">
+          <span class="camera-settings__label">Gaze engine</span>
+          <select id="gaze-engine-select" class="camera-settings__select">
+            <option value="mediapipe">MediaPipe iris (built-in)</option>
+            <option value="webgazer">WebGazer (experimental)</option>
+          </select>
+        </label>
+        <p id="webgazer-hint" class="detector-hint webgazer-hint" hidden>
+          WebGazer maps where you look on the <strong>screen</strong> and needs calibration: click and move the mouse while looking at the cursor. Uses the same camera as Camtrol. Licensed under GPLv3. Reload after switching engines.
+        </p>
         <p class="detector-hint">Hand poses use the full MediaPipe model with smoothing — hold each gesture steady for about half a second. Works best with good lighting and your full hand in frame.</p>
         <label class="slider-label" for="motion-sensitivity">
           Motion sensitivity
@@ -148,7 +158,7 @@
           <li><strong>9 zones</strong> Events log when your gaze moves to another screen region</li>
           <li><strong>😊 😁 😞</strong> Smile, grin, frown, surprise, grimace, etc.</li>
         </ul>
-        <p class="gesture-guide__note">Gaze uses iris tracking from your webcam — good for fun demos, not medical or precision use. Keep your face lit and centered.</p>
+        <p class="gesture-guide__note">Default gaze uses iris landmarks. Optional <strong>WebGazer</strong> engine (sidebar) learns from your clicks and cursor movement for screen-level tracking — calibrate before trusting zone events.</p>
         </div>
       </details>
 

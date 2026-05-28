@@ -135,9 +135,42 @@ export function createOverlay(canvas, video) {
       ctx.fill();
     }
 
-    if (gaze?.eyes) {
-      drawEyeGaze(gaze);
+    if (gaze?.point) {
+      if (gaze.eyes) {
+        drawEyeGaze(gaze);
+      } else {
+        drawGazePoint(gaze);
+      }
     }
+  }
+
+  /** @param {{ point: { x: number, y: number }, zone: { label: string } }} gaze */
+  function drawGazePoint(gaze) {
+    const w = canvas.width;
+    const h = canvas.height;
+    drawGazeGrid(w, h);
+
+    const gp = toCanvasPoint(gaze.point);
+
+    ctx.strokeStyle = "rgba(250, 204, 21, 1)";
+    ctx.fillStyle = "rgba(250, 204, 21, 0.35)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(gp.x, gp.y, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(gp.x - 18, gp.y);
+    ctx.lineTo(gp.x + 18, gp.y);
+    ctx.moveTo(gp.x, gp.y - 18);
+    ctx.lineTo(gp.x, gp.y + 18);
+    ctx.stroke();
+
+    ctx.font = "600 12px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(250, 204, 21, 0.95)";
+    ctx.textAlign = "center";
+    ctx.fillText(gaze.zone.label, gp.x, Math.max(14, gp.y - 22));
   }
 
   /** @param {{ point: { x: number, y: number }, zone: { label: string }, eyes: { left: object, right: object } }} gaze */

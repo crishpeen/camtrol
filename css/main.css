@@ -538,6 +538,23 @@ body {
   color: var(--text-muted);
 }
 
+.webgazer-hint strong {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+/* WebGazer injects fixed UI; keep it off-screen when Camtrol owns the preview */
+#webgazerVideoContainer,
+#webgazerGazeDot {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  top: -9999px !important;
+  left: -9999px !important;
+}
+
 .slider-label {
   display: flex;
   flex-direction: column;

@@ -8,7 +8,7 @@ A browser-based webcam tracker for **movement**, **hand gestures**, and **body p
 - **Hand tracking** — MediaPipe Hands via `@tensorflow-models/hand-pose-detection`
 - **Hand gestures** — poses (thumbs, peace, fist, etc.), touch-style (tap, swipe, scroll, long press, rotate), pinch zoom, wave
 - **Face expressions** — smile, grin, frown, surprise, grimace, squint, kiss, brow raises, and more
-- **Gaze estimation** — iris-based approximate look direction on screen (9 zones + crosshair overlay)
+- **Gaze estimation** — MediaPipe iris zones by default; optional [WebGazer.js](https://webgazer.cs.brown.edu/) screen calibration (experimental, GPLv3)
 - **Body pose** — MoveNet (single-person) via `@tensorflow-models/pose-detection`
 - **Event log** — timestamps, details, and `console` output for every detection
 - **Live overlay** — skeleton lines on the camera preview
@@ -80,9 +80,11 @@ Alternatively, set **Source** to **Deploy from a branch** and choose `main` with
 
 ### Gaze (approximate)
 
-Uses **iris landmarks** from Face Mesh (`refineLandmarks: true`). A yellow **crosshair** on the video shows the estimated look point; the event log updates when your gaze moves to another **3×3 screen zone** (e.g. top-left, center, bottom-right).
+**MediaPipe (default)** — uses iris landmarks from Face Mesh (`refineLandmarks: true`). A yellow **crosshair** on the video shows the estimated look point; the event log updates when your gaze moves to another **3×3 zone** on the video frame.
 
-This is webcam gaze estimation — useful for demos and rough “where are you looking?” feedback, not calibrated eye-tracking hardware.
+**WebGazer (experimental)** — choose *Gaze engine → WebGazer* in the sidebar (page reloads). Uses the [WebGazer.js](https://webgazer.cs.brown.edu/) library (GPL-3.0): it learns from your **clicks and mouse movement** while you look at the cursor, then maps gaze to the same zones on the camera preview. Face expressions are disabled in this mode to avoid loading two face models. Same camera stream as Camtrol — no second webcam.
+
+Neither mode is calibrated lab eye-tracking — useful for demos and rough “where are you looking?” feedback.
 
 ## Project structure
 
@@ -101,6 +103,9 @@ js/detectors/
   face.js             # Face mesh detector
   face-expressions.js # Grimaces & expressions
   gaze.js             # Iris-based gaze point & zones
+  gaze-webgazer.js    # WebGazer integration (optional engine)
+  gaze-viewport.js    # Screen → video frame coordinate mapping
+  gaze-engine.js      # Saved gaze engine preference
   gesture-stabilizer.js
   pose.js           # MoveNet body pose
 ```
