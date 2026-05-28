@@ -69,7 +69,8 @@ export function createOverlay(canvas, video) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     for (const face of faces) {
-      drawFace(face.keypoints ?? face.scaledMesh);
+      const kp = face.keypoints ?? face.scaledMesh;
+      drawFace(kp, face.gaze);
     }
     for (const pose of poses) {
       drawPose(pose.keypoints);
@@ -81,8 +82,9 @@ export function createOverlay(canvas, video) {
 
   /**
    * @param {{ x: number, y: number }[] | undefined} keypoints
+   * @param {import("./detectors/gaze.js").ReturnType<typeof import("./detectors/gaze.js").estimateGaze>} [gaze]
    */
-  function drawFace(keypoints) {
+  function drawFace(keypoints, gaze) {
     if (!keypoints?.length) return;
 
     ctx.strokeStyle = "rgba(251, 191, 36, 0.75)";
@@ -105,6 +107,80 @@ export function createOverlay(canvas, video) {
       ctx.beginPath();
       ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    if (gaze?.eyes) {
+      drawEyeGaze(gaze);
+    }
+  }
+
+  /** @param {{ point: { x: number, y: number }, zone: { label: string }, eyes: { left: object, right: object } }} gaze */
+  function drawEyeGaze(gaze) {
+    const w = canvas.width;
+    const h = canvas.height;
+
+    drawGazeGrid(w, h);
+
+    for (const eye of [gaze.eyes.left, gaze.eyes.right]) {
+      ctx.strokeStyle = "rgba(147, 197, 253, 0.9)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(eye.center.x, eye.center.y, eye.eyeW * 0.55, eye.eyeH * 0.65, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(96, 165, 250, 1)";
+      ctx.beginPath();
+      ctx.arc(eye.iris.x, eye.iris.y, Math.max(3, eye.eyeW * 0.12), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const bridgeX = (gaze.eyes.left.center.x + gaze.eyes.right.center.x) / 2;
+    const bridgeY = (gaze.eyes.left.center.y + gaze.eyes.right.center.y) / 2;
+
+    ctx.strokeStyle = "rgba(251, 191, 36, 0.55)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.moveTo(bridgeX, bridgeY);
+    ctx.lineTo(gaze.point.x, gaze.point.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.strokeStyle = "rgba(250, 204, 21, 1)";
+    ctx.fillStyle = "rgba(250, 204, 21, 0.35)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(gaze.point.x, gaze.point.y, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(gaze.point.x - 18, gaze.point.y);
+    ctx.lineTo(gaze.point.x + 18, gaze.point.y);
+    ctx.moveTo(gaze.point.x, gaze.point.y - 18);
+    ctx.lineTo(gaze.point.x, gaze.point.y + 18);
+    ctx.stroke();
+
+    ctx.font = "600 12px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(250, 204, 21, 0.95)";
+    ctx.textAlign = "center";
+    ctx.fillText(gaze.zone.label, gaze.point.x, Math.max(14, gaze.point.y - 22));
+  }
+
+  function drawGazeGrid(w, h) {
+    ctx.strokeStyle = "rgba(251, 191, 36, 0.12)";
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 3; i++) {
+      const x = (w * i) / 3;
+      const y = (h * i) / 3;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
     }
   }
 

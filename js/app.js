@@ -16,6 +16,7 @@ const toggleMotion = document.getElementById("toggle-motion");
 const toggleHands = document.getElementById("toggle-hands");
 const togglePose = document.getElementById("toggle-pose");
 const toggleFace = document.getElementById("toggle-face");
+const toggleGazeOverlay = document.getElementById("toggle-gaze-overlay");
 const motionSensitivity = document.getElementById("motion-sensitivity");
 
 const eventLog = createEventLog(eventLogEl, eventLogEmpty);
@@ -125,7 +126,7 @@ async function loadModels() {
       eventLog.log({
         category: "system",
         label: "Face detector ready",
-        detail: "Expressions & grimaces enabled",
+        detail: "Expressions, grimaces & iris gaze enabled",
       });
     } catch (err) {
       console.error(err);
@@ -240,11 +241,15 @@ async function loop() {
       lastFaces = (await faceDetector.tick(video)) ?? [];
     }
 
-    overlay.draw(
-      toggleHands.checked ? lastHands : [],
-      togglePose.checked ? lastPoses : [],
-      toggleFace.checked ? lastFaces : []
-    );
+    const facesForOverlay =
+      toggleFace.checked && lastFaces.length
+        ? lastFaces.map((f) => ({
+            ...f,
+            gaze: toggleGazeOverlay?.checked !== false ? f.gaze : null,
+          }))
+        : [];
+
+    overlay.draw(toggleHands.checked ? lastHands : [], togglePose.checked ? lastPoses : [], facesForOverlay);
   } catch (err) {
     console.error("Detection loop error:", err);
   }

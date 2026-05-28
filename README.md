@@ -8,6 +8,7 @@ A browser-based webcam tracker for **movement**, **hand gestures**, and **body p
 - **Hand tracking** — MediaPipe Hands via `@tensorflow-models/hand-pose-detection`
 - **Hand gestures** — poses (thumbs, peace, fist, etc.), touch-style (tap, swipe, scroll, long press, rotate), pinch zoom, wave
 - **Face expressions** — smile, grin, frown, surprise, grimace, squint, kiss, brow raises, and more
+- **Gaze estimation** — iris-based approximate look direction on screen (9 zones + crosshair overlay)
 - **Body pose** — MoveNet (single-person) via `@tensorflow-models/pose-detection`
 - **Event log** — timestamps, details, and `console` output for every detection
 - **Live overlay** — skeleton lines on the camera preview
@@ -93,6 +94,7 @@ js/detectors/
   touch-gestures.js   # Tap, swipe, scroll, etc.
   face.js             # Face mesh detector
   face-expressions.js # Grimaces & expressions
+  gaze.js             # Iris-based gaze point & zones
   gesture-stabilizer.js
   pose.js           # MoveNet body pose
 ```

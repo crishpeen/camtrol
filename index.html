@@ -58,7 +58,13 @@
           <li>
             <label class="toggle">
               <input type="checkbox" id="toggle-face" checked />
-              <span>Face expressions</span>
+              <span>Face &amp; gaze</span>
+            </label>
+          </li>
+          <li>
+            <label class="toggle">
+              <input type="checkbox" id="toggle-gaze-overlay" checked />
+              <span>Show gaze on video</span>
             </label>
           </li>
         </ul>
@@ -86,12 +92,13 @@
           <li><strong>Drag</strong> Slow pan in any direction</li>
           <li><strong>Rotate</strong> Pinch and twist thumb/index</li>
         </ul>
-        <p class="gesture-guide__intro">Face expressions</p>
+        <p class="gesture-guide__intro">Face &amp; gaze (approximate)</p>
         <ul class="gesture-guide">
-          <li><strong>😊 😁 😞 😮 😲</strong> Smile, grin, frown, surprise</li>
-          <li><strong>😬 😑 😗</strong> Grimace, squint, kiss/pucker</li>
-          <li><strong>🤨 😠</strong> Brows up or furrowed</li>
+          <li><strong>👁️ Gaze dot</strong> Yellow crosshair = where the app thinks you look on screen</li>
+          <li><strong>9 zones</strong> Events log when your gaze moves to another screen region</li>
+          <li><strong>😊 😁 😞</strong> Smile, grin, frown, surprise, grimace, etc.</li>
         </ul>
+        <p class="gesture-guide__note">Gaze uses iris tracking from your webcam — good for fun demos, not medical or precision use. Keep your face lit and centered.</p>
       </section>
 
       <section class="card card--log" aria-label="Event log">

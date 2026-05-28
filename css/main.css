@@ -271,6 +271,14 @@ body {
   margin-top: 0;
 }
 
+.gesture-guide__note {
+  margin: 0.5rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .card--gestures h2 {
   margin-bottom: 0.5rem;
 }
