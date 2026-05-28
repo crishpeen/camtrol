@@ -49,15 +49,15 @@ btnStart.addEventListener("click", () => startCamera());
 btnStop.addEventListener("click", () => stopCamera());
 btnClearLog.addEventListener("click", () => eventLog.clear());
 
-const eventHud = document.getElementById("event-hud");
-const btnToggleHud = document.getElementById("btn-toggle-hud");
+const eventStrip = document.getElementById("event-strip");
+const btnToggleLog = document.getElementById("btn-toggle-log");
 
-btnToggleHud?.addEventListener("click", () => {
-  const collapsed = eventHud?.classList.toggle("event-hud--collapsed");
+btnToggleLog?.addEventListener("click", () => {
+  const collapsed = eventStrip?.classList.toggle("event-strip--collapsed");
   const expanded = !collapsed;
-  btnToggleHud.setAttribute("aria-expanded", String(expanded));
-  btnToggleHud.title = expanded ? "Hide event list" : "Show event list";
-  btnToggleHud.textContent = expanded ? "▼" : "▶";
+  btnToggleLog.setAttribute("aria-expanded", String(expanded));
+  btnToggleLog.title = expanded ? "Collapse event list" : "Expand event list";
+  btnToggleLog.textContent = expanded ? "▼" : "▶";
 });
 
 loadModels();

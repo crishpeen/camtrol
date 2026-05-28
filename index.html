@@ -26,30 +26,31 @@
         <video id="webcam" playsinline muted autoplay aria-label="Webcam feed"></video>
         <canvas id="overlay" aria-hidden="true"></canvas>
         <p class="video-placeholder" id="video-placeholder">Camera off</p>
+      </div>
 
-        <div class="event-hud" id="event-hud" aria-label="Live events">
-          <div class="event-hud__bar">
-            <span class="event-hud__title">Events</span>
-            <div class="event-hud__actions">
-              <button type="button" id="btn-clear-log" class="btn btn--ghost btn--sm">Clear</button>
-              <button
-                type="button"
-                id="btn-toggle-hud"
-                class="btn btn--ghost btn--sm event-hud__collapse"
-                aria-expanded="true"
-                aria-controls="event-hud-panel"
-                title="Hide event list"
-              >
-                ▼
-              </button>
-            </div>
-          </div>
-          <div class="event-hud__panel" id="event-hud-panel">
-            <ol id="event-log" class="event-log event-log--hud" reversed></ol>
-            <p class="event-log-empty" id="event-log-empty">No events yet</p>
+      <section class="event-strip card" id="event-strip" aria-label="Live events">
+        <div class="event-strip__bar card__header">
+          <h2>Events</h2>
+          <div class="event-strip__actions">
+            <button type="button" id="btn-clear-log" class="btn btn--ghost btn--sm">Clear</button>
+            <button
+              type="button"
+              id="btn-toggle-log"
+              class="btn btn--ghost btn--sm event-strip__toggle"
+              aria-expanded="true"
+              aria-controls="event-strip-panel"
+              title="Collapse event list"
+            >
+              ▼
+            </button>
           </div>
         </div>
-      </div>
+        <div class="event-strip__panel" id="event-strip-panel">
+          <ol id="event-log" class="event-log event-log--strip" reversed></ol>
+          <p class="event-log-empty" id="event-log-empty">No events yet. Start the camera to begin tracking.</p>
+        </div>
+      </section>
+
       <div class="video-controls">
         <button type="button" id="btn-start" class="btn btn--primary">Start camera</button>
         <button type="button" id="btn-stop" class="btn btn--secondary" disabled>Stop</button>
@@ -97,8 +98,9 @@
         </label>
       </section>
 
-      <section class="card card--gestures" aria-label="Supported gestures">
-        <h2>Gesture guide</h2>
+      <details class="card card--gestures card--collapsible">
+        <summary class="card--collapsible__summary">Gesture guide</summary>
+        <div class="card--collapsible__body">
         <p class="gesture-guide__intro">Hand poses</p>
         <ul class="gesture-guide">
           <li><strong>👍 / 👎</strong> Thumbs up or down</li>
@@ -122,7 +124,8 @@
           <li><strong>😊 😁 😞</strong> Smile, grin, frown, surprise, grimace, etc.</li>
         </ul>
         <p class="gesture-guide__note">Gaze uses iris tracking from your webcam — good for fun demos, not medical or precision use. Keep your face lit and centered.</p>
-      </section>
+        </div>
+      </details>
 
     </aside>
   </main>
