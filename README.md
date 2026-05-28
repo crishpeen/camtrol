@@ -78,6 +78,12 @@ Alternatively, set **Source** to **Deploy from a branch** and choose `main` with
 | Kiss / pucker | Lips forward, narrow |
 | Brows up / furrowed | Raise or lower eyebrows |
 
+### Gaze (approximate)
+
+Uses **iris landmarks** from Face Mesh (`refineLandmarks: true`). A yellow **crosshair** on the video shows the estimated look point; the event log updates when your gaze moves to another **3×3 screen zone** (e.g. top-left, center, bottom-right).
+
+This is webcam gaze estimation — useful for demos and rough “where are you looking?” feedback, not calibrated eye-tracking hardware.
+
 ## Project structure
 
 ```

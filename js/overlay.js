@@ -82,7 +82,7 @@ export function createOverlay(canvas, video) {
 
   /**
    * @param {{ x: number, y: number }[] | undefined} keypoints
-   * @param {import("./detectors/gaze.js").ReturnType<typeof import("./detectors/gaze.js").estimateGaze>} [gaze]
+   * @param {{ point: { x: number, y: number }, zone: { label: string }, eyes: object } | null | undefined} [gaze]
    */
   function drawFace(keypoints, gaze) {
     if (!keypoints?.length) return;
