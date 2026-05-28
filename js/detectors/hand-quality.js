@@ -1,8 +1,30 @@
 import { LM } from "./gestures.js";
 
 /**
- * Reject frames where the hand is too small, off-screen, or landmarks look unstable.
+ * MediaPipe returns pixel coords on video; metrics expect 0–1 space.
  * @param {{ x: number, y: number, z?: number }[]} keypoints
+ * @param {number} frameWidth
+ * @param {number} frameHeight
+ */
+export function keypointsForMetrics(keypoints, frameWidth, frameHeight) {
+  if (!keypoints?.length) return keypoints;
+  const maxCoord = Math.max(
+    ...keypoints.map((p) => Math.max(Math.abs(p.x), Math.abs(p.y)))
+  );
+  if (maxCoord <= 1.5) return keypoints;
+
+  const w = Math.max(frameWidth, 1);
+  const h = Math.max(frameHeight, 1);
+  return keypoints.map((p) => ({
+    ...p,
+    x: p.x / w,
+    y: p.y / h,
+  }));
+}
+
+/**
+ * Reject frames where the hand is too small, off-screen, or landmarks look unstable.
+ * @param {{ x: number, y: number, z?: number }[]} keypoints — use 0–1 space (see keypointsForMetrics)
  * @param {number} [detectorScore]
  */
 export function assessHandQuality(keypoints, detectorScore) {
@@ -17,12 +39,12 @@ export function assessHandQuality(keypoints, detectorScore) {
   const palmHeight = Math.hypot(indexMcp.x - wrist.x, indexMcp.y - wrist.y);
   const palmSpan = Math.max(palmWidth, palmHeight, 1e-6);
 
-  if (palmSpan < 0.06) {
+  if (palmSpan < 0.045) {
     return { ok: false, score: 0.2, reason: "too_far" };
   }
 
   const inBounds = keypoints.every(
-    (p) => p.x >= -0.08 && p.x <= 1.08 && p.y >= -0.08 && p.y <= 1.08
+    (p) => p.x >= -0.12 && p.x <= 1.12 && p.y >= -0.12 && p.y <= 1.12
   );
   if (!inBounds) {
     return { ok: false, score: 0.25, reason: "partial" };
@@ -35,20 +57,28 @@ export function assessHandQuality(keypoints, detectorScore) {
   }
   spread /= tips.length;
   const spreadRatio = spread / palmSpan;
-  if (spreadRatio < 0.85 || spreadRatio > 3.2) {
+  if (spreadRatio < 0.72 || spreadRatio > 3.5) {
     return { ok: false, score: 0.3, reason: "distorted" };
   }
 
-  const det = detectorScore ?? 1;
-  const sizeScore = Math.min(1, palmSpan / 0.14);
-  const score = det * 0.45 + sizeScore * 0.35 + Math.min(1, spreadRatio / 1.6) * 0.2;
+  const det = detectorScore ?? 0.85;
+  const sizeScore = Math.min(1, palmSpan / 0.12);
+  const score = det * 0.5 + sizeScore * 0.35 + Math.min(1, spreadRatio / 1.6) * 0.15;
+
+  const minDet = det >= 0.42;
+  const ok = score >= 0.48 && minDet;
 
   return {
-    ok: score >= 0.58 && det >= 0.55,
+    ok,
     score,
-    reason: score >= 0.58 ? "ok" : "low_confidence",
+    reason: ok ? "ok" : minDet ? "low_confidence" : "weak_detector",
     palmSpan,
   };
+}
+
+/** Minimum detector score to draw skeleton on video. */
+export function passesOverlayGate(detectorScore) {
+  return detectorScore == null || detectorScore >= 0.35;
 }
 
 /**

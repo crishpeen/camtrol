@@ -2,7 +2,12 @@
 import { classifyGestureWithQuality, gestureLabel, getFingerStates, isPinchPose } from "./gestures.js";
 import { createPoseGestureStabilizer } from "./gesture-stabilizer.js";
 import { createGestureEmitter } from "./gesture-emitter.js";
-import { assessHandQuality, smoothKeypoints } from "./hand-quality.js";
+import {
+  assessHandQuality,
+  keypointsForMetrics,
+  passesOverlayGate,
+  smoothKeypoints,
+} from "./hand-quality.js";
 import { createMotionGestureTracker, motionGestureLabel } from "./gesture-motion.js";
 import { createTouchGestureTracker, touchGestureLabel } from "./touch-gestures.js";
 
@@ -13,10 +18,10 @@ const GESTURE_COOLDOWN_MS = 1400;
 const MOTION_COOLDOWN_MS = 900;
 const TOUCH_COOLDOWN_MS = 700;
 const PRESENCE_COOLDOWN_MS = 2500;
-const MIN_GESTURE_CONFIDENCE = 0.62;
-const MIN_TOUCH_CONFIDENCE = 0.55;
-const MIN_MOTION_CONFIDENCE = 0.55;
-const KEYPOINT_SMOOTH_ALPHA = 0.4;
+const MIN_GESTURE_CONFIDENCE = 0.58;
+const MIN_TOUCH_CONFIDENCE = 0.52;
+const MIN_MOTION_CONFIDENCE = 0.52;
+const KEYPOINT_SMOOTH_ALPHA = 0.45;
 
 const MOTION_IDS = new Set([
   "wave",
@@ -38,6 +43,14 @@ const MOTION_IDS = new Set([
   "rotate",
 ]);
 
+function useLiteHandModel() {
+  if (typeof matchMedia === "function" && matchMedia("(max-width: 900px)").matches) {
+    return true;
+  }
+  const cores = navigator.hardwareConcurrency ?? 8;
+  return cores <= 4;
+}
+
 /**
  * @param {{ onEvent: (e: { label: string, detail?: string }) => void, onHands?: (hands: unknown[]) => void }} options
  */
@@ -49,10 +62,11 @@ export async function createHandDetector(options) {
   await tf.setBackend("webgl");
   await tf.ready();
 
+  const modelType = useLiteHandModel() ? "lite" : "full";
   const model = handPoseDetection.SupportedModels.MediaPipeHands;
   const detector = await handPoseDetection.createDetector(model, {
     runtime: "tfjs",
-    modelType: "full",
+    modelType,
     maxHands: 2,
   });
 
@@ -61,9 +75,13 @@ export async function createHandDetector(options) {
   /** @type {Map<string, { x: number, y: number, z?: number }[]>} */
   const smoothedKp = new Map();
   const stabilizer = createPoseGestureStabilizer();
-  const poseEmitter = createGestureEmitter({ minStableFrames: 7, minConfidence: 0.66 });
+  const poseEmitter = createGestureEmitter({
+    minStableFrames: useLiteHandModel() ? 5 : 6,
+    minConfidence: 0.58,
+  });
   const motionTracker = createMotionGestureTracker();
   const touchTracker = createTouchGestureTracker();
+  let zeroHandFrames = 0;
 
   function reset() {
     lastGesture.clear();
@@ -73,6 +91,7 @@ export async function createHandDetector(options) {
     poseEmitter.reset();
     motionTracker.reset();
     touchTracker.reset();
+    zeroHandFrames = 0;
   }
 
   function gestureCooldown(id) {
@@ -106,21 +125,40 @@ export async function createHandDetector(options) {
     const frameWidth = video.videoWidth || 640;
     const frameHeight = video.videoHeight || 480;
     const activeKeys = new Set();
+    /** @type {typeof hands} */
+    const overlayHands = [];
+
+    if (!hands.length) {
+      zeroHandFrames += 1;
+      if (zeroHandFrames === 90) {
+        options.onEvent({
+          label: "No hand in frame",
+          detail:
+            "Model sees no hand — try brighter light, fill the frame with your hand, or move closer",
+        });
+      }
+    } else {
+      zeroHandFrames = 0;
+    }
 
     for (const hand of hands) {
+      if (!passesOverlayGate(hand.score)) continue;
+
       const side = hand.handedness ?? "hand";
       const key = side;
       activeKeys.add(key);
+      overlayHands.push(hand);
 
-      const quality = assessHandQuality(hand.keypoints, hand.score);
+      const metricsKp = keypointsForMetrics(hand.keypoints, frameWidth, frameHeight);
+      const quality = assessHandQuality(metricsKp, hand.score);
+
       if (!quality.ok) {
         poseEmitter.unlock(key);
         smoothedKp.delete(key);
         continue;
       }
 
-      const rawKp = hand.keypoints;
-      const keypoints = smoothKeypoints(rawKp, smoothedKp.get(key) ?? null, KEYPOINT_SMOOTH_ALPHA);
+      const keypoints = smoothKeypoints(hand.keypoints, smoothedKp.get(key) ?? null, KEYPOINT_SMOOTH_ALPHA);
       smoothedKp.set(key, keypoints);
       hand.keypoints = keypoints;
 
@@ -129,16 +167,16 @@ export async function createHandDetector(options) {
         const score = hand.score != null ? ` (${(hand.score * 100).toFixed(0)}%)` : "";
         options.onEvent({
           label: `${capitalize(side)} hand detected`,
-          detail: `${keypoints.length} keypoints${score} · tracking quality ${Math.round(quality.score * 100)}%`,
+          detail: `${keypoints.length} keypoints${score} · quality ${Math.round(quality.score * 100)}% · ${modelType} model`,
         });
       }
 
-      const fingerStates = getFingerStates(keypoints, side);
+      const fingerStates = getFingerStates(metricsKp, side);
       const pointing =
         fingerStates.index.extended &&
         !fingerStates.middle.extended &&
         fingerStates.middle.strength < 0.38;
-      const pinching = isPinchPose(keypoints);
+      const pinching = isPinchPose(metricsKp);
       const openPalm =
         fingerStates.index.extended &&
         fingerStates.middle.extended &&
@@ -169,7 +207,7 @@ export async function createHandDetector(options) {
         continue;
       }
 
-      const raw = classifyGestureWithQuality(keypoints, side, quality.score);
+      const raw = classifyGestureWithQuality(metricsKp, side, quality.score);
       const stable = stabilizer.push(key, raw);
       const toEmit = poseEmitter.consider(key, stable);
 
@@ -188,14 +226,14 @@ export async function createHandDetector(options) {
       }
     }
 
-    return hands;
+    return overlayHands;
   }
 
   function dispose() {
     detector.dispose?.();
   }
 
-  return { tick, reset, dispose };
+  return { tick, reset, dispose, modelType };
 }
 
 function capitalize(s) {

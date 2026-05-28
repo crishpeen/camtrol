@@ -84,10 +84,12 @@ async function loadModels() {
       handDetector = await createHandDetector({
         onEvent: (e) => logDetection("hand", e.label, e.detail),
       });
+      const modelHint =
+        handDetector && "modelType" in handDetector ? String(handDetector.modelType) : "full";
       eventLog.log({
         category: "system",
         label: "Hand detector ready",
-        detail: "Poses + touch gestures enabled",
+        detail: `MediaPipe ${modelHint} — hold gestures ~0.5s`,
       });
     } catch (err) {
       console.error(err);
@@ -241,37 +243,30 @@ async function loop() {
   try {
     if (!mlBusy) {
       mlBusy = true;
-      const mlTasks = [];
 
+      // Hands run alone first — on phones, parallel TF models often drop hand inference.
       if (toggleHands.checked && handDetector) {
-        mlTasks.push(
-          handDetector.tick(video).then((hands) => {
-            lastHands = hands ?? [];
-          })
-        );
+        lastHands = (await handDetector.tick(video)) ?? [];
       }
 
+      const otherMl = [];
       if (togglePose.checked && poseDetector) {
-        mlTasks.push(
+        otherMl.push(
           poseDetector.tick(video).then((poses) => {
             lastPoses = poses ?? [];
           })
         );
       }
-
       if (toggleFace.checked && faceDetector) {
-        mlTasks.push(
+        otherMl.push(
           faceDetector.tick(video).then((faces) => {
             lastFaces = faces ?? [];
           })
         );
       }
+      if (otherMl.length) await Promise.all(otherMl);
 
-      if (mlTasks.length) {
-        await Promise.all(mlTasks);
-        markMlSubjectsActive();
-      }
-
+      if (toggleHands.checked || otherMl.length) markMlSubjectsActive();
       mlBusy = false;
     }
 
