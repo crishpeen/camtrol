@@ -10,6 +10,9 @@ import {
   streamFacingMode,
 } from "./camera.js";
 import { isMirrorPreview, setMirrorPreview } from "./mirror-state.js";
+import { getGesturePreferences } from "./gesture-preferences.js";
+
+const gesturePrefs = getGesturePreferences();
 
 const video = /** @type {HTMLVideoElement} */ (document.getElementById("webcam"));
 const overlayCanvas = /** @type {HTMLCanvasElement} */ (document.getElementById("overlay"));
@@ -92,7 +95,17 @@ btnToggleLog?.addEventListener("click", () => {
 });
 
 applyMobileDefaults();
+initGesturePreferencesUI();
 loadModels();
+
+function initGesturePreferencesUI() {
+  const root = document.getElementById("gesture-toggles-root");
+  gesturePrefs.mountUI(root);
+
+  document.getElementById("btn-gestures-all")?.addEventListener("click", () => gesturePrefs.setAll(true));
+  document.getElementById("btn-gestures-none")?.addEventListener("click", () => gesturePrefs.setAll(false));
+  document.getElementById("btn-gestures-reset")?.addEventListener("click", () => gesturePrefs.resetDefaults());
+}
 
 function applyMobileDefaults() {
   const mobile =
@@ -128,6 +141,7 @@ async function loadModels() {
       onEvent: (e) => logDetection("hand", e.label, e.detail),
       onInit: (detail) =>
         eventLog.log({ category: "system", label: "Hands loading", detail }),
+      isGestureEnabled: (id) => gesturePrefs.isEnabled(id),
     });
     handRuntimeLabel = handDetector?.runtime ?? "unknown";
     if (handDetector?.initNotes?.length) {
@@ -172,9 +186,10 @@ async function loadPoseModel() {
   poseLoading = true;
   try {
     const { createPoseDetector } = await import("./detectors/pose.js");
-    poseDetector = await createPoseDetector({
-      onEvent: (e) => logDetection("pose", e.label, e.detail),
-    });
+      poseDetector = await createPoseDetector({
+        onEvent: (e) => logDetection("pose", e.label, e.detail),
+        isGestureEnabled: (id) => gesturePrefs.isEnabled(id),
+      });
     eventLog.log({
       category: "system",
       label: "Pose detector ready",
@@ -208,9 +223,10 @@ async function loadFaceModel() {
   }
   try {
     const { createFaceDetector } = await import("./detectors/face.js");
-    faceDetector = await createFaceDetector({
-      onEvent: (e) => logDetection("face", e.label, e.detail),
-    });
+      faceDetector = await createFaceDetector({
+        onEvent: (e) => logDetection("face", e.label, e.detail),
+        isGestureEnabled: (id) => gesturePrefs.isEnabled(id),
+      });
     eventLog.log({
       category: "system",
       label: "Face detector ready",

@@ -60,7 +60,10 @@ export async function createPoseDetector(options) {
       return poses;
     }
 
-    if (now - lastBodySeen > COOLDOWN_MS) {
+    if (
+      (!options.isGestureEnabled || options.isGestureEnabled("pose_body")) &&
+      now - lastBodySeen > COOLDOWN_MS
+    ) {
       lastBodySeen = now;
       const confident = pose.keypoints.filter((k) => (k.score ?? 0) > 0.35).length;
       options.onEvent({
@@ -69,7 +72,7 @@ export async function createPoseDetector(options) {
       });
     }
 
-    if (lastKeypoints) {
+    if (lastKeypoints && (!options.isGestureEnabled || options.isGestureEnabled("pose_limb"))) {
       for (const kp of pose.keypoints) {
         if ((kp.score ?? 0) < 0.4 || !KEYPOINT_NAMES[kp.name]) continue;
 

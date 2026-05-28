@@ -2,6 +2,7 @@
 import { classifyFaceExpression, faceExpressionLabel } from "./face-expressions.js";
 import { createGestureStabilizer } from "./gesture-stabilizer.js";
 import { estimateGaze, resetGazeSmoothing, gazeZoneLabel } from "./gaze.js";
+import { gazePrefKey } from "../gesture-preferences.js";
 
 const faceLandmarksDetection = globalThis.faceLandmarksDetection;
 const tf = globalThis.tf;
@@ -56,7 +57,10 @@ export async function createFaceDetector(options) {
       const face = faces[i];
       const key = `face${i}`;
 
-      if (now - lastPresence > PRESENCE_COOLDOWN_MS) {
+      if (
+        (!options.isGestureEnabled || options.isGestureEnabled("face_presence")) &&
+        now - lastPresence > PRESENCE_COOLDOWN_MS
+      ) {
         lastPresence = now;
         const pts = face.keypoints?.length ?? face.scaledMesh?.length ?? 0;
         options.onEvent({
@@ -71,7 +75,9 @@ export async function createFaceDetector(options) {
       const gaze = estimateGaze(keypoints, frameWidth, frameHeight);
       if (gaze) {
         face.gaze = gaze;
+        const gazeKey = gazePrefKey(gaze.zone.id);
         if (
+          (!options.isGestureEnabled || options.isGestureEnabled(gazeKey)) &&
           gaze.confidence >= MIN_GAZE_CONFIDENCE &&
           gaze.zone.id !== lastGazeZone &&
           now - lastGazeEmit > GAZE_ZONE_COOLDOWN_MS
@@ -91,6 +97,7 @@ export async function createFaceDetector(options) {
       const stable = stabilizer.push(key, raw);
 
       if (!stable || stable.confidence < MIN_CONFIDENCE) continue;
+      if (options.isGestureEnabled && !options.isGestureEnabled(stable.id)) continue;
 
       const exprKey = `${key}:${stable.id}`;
       if (now - (lastExpression.get(exprKey) ?? 0) < EXPRESSION_COOLDOWN_MS) continue;

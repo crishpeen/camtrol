@@ -166,6 +166,8 @@ export async function createHandDetector(options) {
   }
 
   function emitGesture(handKey, gesture, labelFn, now, side) {
+    if (options.isGestureEnabled && !options.isGestureEnabled(gesture.id)) return;
+
     const gestureKey = `${handKey}:${gesture.id}`;
     if (now - (lastGesture.get(gestureKey) ?? 0) < gestureCooldown(gesture.id)) return;
 
@@ -237,7 +239,10 @@ export async function createHandDetector(options) {
       smoothedKp.set(key, keypoints);
       hand.keypoints = keypoints;
 
-      if (now - (lastPresence.get(key) ?? 0) > PRESENCE_COOLDOWN_MS) {
+      if (
+        (!options.isGestureEnabled || options.isGestureEnabled("hand_presence")) &&
+        now - (lastPresence.get(key) ?? 0) > PRESENCE_COOLDOWN_MS
+      ) {
         lastPresence.set(key, now);
         const score = hand.score != null ? ` (${(hand.score * 100).toFixed(0)}%)` : "";
         options.onEvent({

@@ -112,6 +112,17 @@
         </label>
       </section>
 
+      <details class="card card--collapsible" open>
+        <summary class="card--collapsible__summary">Track these events</summary>
+        <div class="gesture-prefs__toolbar">
+          <button type="button" id="btn-gestures-all" class="btn btn--ghost btn--sm">All on</button>
+          <button type="button" id="btn-gestures-none" class="btn btn--ghost btn--sm">All off</button>
+          <button type="button" id="btn-gestures-reset" class="btn btn--ghost btn--sm">Reset</button>
+        </div>
+        <div id="gesture-toggles-root" class="gesture-prefs"></div>
+        <p class="gesture-prefs__note">Choices are saved in this browser. Master toggles above still turn whole detectors on/off.</p>
+      </details>
+
       <details class="card card--gestures card--collapsible">
         <summary class="card--collapsible__summary">Gesture guide</summary>
         <div class="card--collapsible__body">
