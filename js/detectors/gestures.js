@@ -24,7 +24,7 @@ export const LM = {
 };
 
 /** @typedef {{ extended: boolean, strength: number }} FingerState */
-/** @typedef {{ extended: boolean, vertical: 'up' | 'down' | 'neutral', strength: number }} ThumbState */
+/** @typedef {{ extended: boolean, vertical: 'up' | 'down' | 'neutral', strength: number, spreadDelta: number, verticalNorm: number }} ThumbState */
 
 /**
  * @param {{ x: number, y: number, z?: number }[]} keypoints
@@ -92,27 +92,34 @@ function thumbState(keypoints, handedness) {
   const verticalNorm = (tip.y - mcp.y) / palmWidth;
 
   const extended =
-    spreadDelta > 0.14 &&
-    spreadRatio > 1.1 &&
-    lengthRatio > 1.04 &&
-    (lateralNorm > -0.08 || spreadDelta > 0.22);
+    spreadDelta > 0.1 &&
+    spreadRatio > 1.06 &&
+    lengthRatio > 1.03 &&
+    (lateralNorm > -0.12 || spreadDelta > 0.16);
 
-  const curled = spreadDelta < 0.06 && spreadRatio < 1.08 && lengthRatio < 1.06;
+  const curled = spreadDelta < 0.05 && spreadRatio < 1.06 && lengthRatio < 1.05;
 
   let vertical = "neutral";
-  if (extended) {
-    if (verticalNorm < -0.11) vertical = "up";
-    else if (verticalNorm > 0.11) vertical = "down";
+  // Require thumb spread away from palm for vertical up/down (avoids curled thumb reading as "up")
+  if (spreadDelta > 0.05 && verticalNorm < -0.06) vertical = "up";
+  else if (spreadDelta > 0.05 && verticalNorm > 0.08) vertical = "down";
+  else if (extended && spreadDelta > 0.08) {
+    if (verticalNorm < -0.05) vertical = "up";
+    else if (verticalNorm > 0.07) vertical = "down";
   }
 
   return {
     extended,
     vertical,
+    spreadDelta,
+    verticalNorm,
     strength: extended
       ? Math.min(1, spreadDelta * 2.5)
       : curled
         ? 0
-        : 0.25,
+        : vertical === "up"
+          ? 0.45
+          : 0.25,
   };
 }
 
@@ -140,14 +147,53 @@ function isCurled(state) {
   return !state.extended && state.strength < 0.35;
 }
 
-/** @param {ThumbState} thumb */
-function isThumbUp(thumb) {
-  return thumb.extended && thumb.vertical === "up" && thumb.strength >= 0.4;
+/**
+ * Lenient check — thumb raised with other fingers folded (handles tilted hand to camera).
+ * @param {{ x: number, y: number, z?: number }[]} keypoints
+ * @param {ReturnType<typeof getFingerStates>} f
+ */
+function isThumbsUpPose(keypoints, f) {
+  if (!fingersFolded(f)) return false;
+
+  const tip = keypoints[LM.THUMB_TIP];
+  const mcp = keypoints[LM.THUMB_MCP];
+  const indexMcp = keypoints[LM.INDEX_MCP];
+  const wrist = keypoints[LM.WRIST];
+  const palmWidth = Math.max(dist(indexMcp, wrist), 1e-6);
+
+  const thumbPointingUp = f.thumb.vertical === "up" || f.thumb.verticalNorm < -0.055;
+  const thumbAboveKnuckles = tip.y < indexMcp.y + palmWidth * 0.08;
+  const thumbAwayFromPalm = f.thumb.extended || f.thumb.spreadDelta > 0.08;
+  const thumbLongerThanFolded = dist(tip, wrist) > dist(keypoints[LM.THUMB_IP], wrist) * 1.02;
+
+  return thumbPointingUp && thumbAboveKnuckles && thumbAwayFromPalm && thumbLongerThanFolded;
 }
 
 /** @param {ThumbState} thumb */
-function isThumbDown(thumb) {
-  return thumb.extended && thumb.vertical === "down" && thumb.strength >= 0.4;
+function isThumbDownPose(keypoints, f) {
+  if (!fingersFolded(f)) return false;
+  return (
+    f.thumb.vertical === "down" &&
+    (f.thumb.extended || f.thumb.verticalNorm > 0.1) &&
+    keypoints[LM.THUMB_TIP].y > keypoints[LM.INDEX_MCP].y
+  );
+}
+
+/** Other fingers not extended (lenient for thumbs poses). */
+function fingersFolded(f) {
+  return [f.index, f.middle, f.ring, f.pinky].every(
+    (finger) => !finger.extended || finger.strength < 0.52
+  );
+}
+
+/** True fist: all digits curled including thumb wrapped in. */
+function isFistPose(keypoints, f) {
+  if (isThumbsUpPose(keypoints, f) || isThumbDownPose(keypoints, f)) return false;
+
+  const digitsCurled = [f.index, f.middle, f.ring, f.pinky].every((finger) => !finger.extended);
+  const thumbWrapped = f.thumb.spreadDelta < 0.08 && !f.thumb.extended && f.thumb.vertical !== "up";
+
+  return digitsCurled && thumbWrapped;
 }
 
 /**
@@ -168,7 +214,7 @@ function isRockOn(f) {
     isExtended(f.pinky) &&
     isCurled(f.middle) &&
     isCurled(f.ring) &&
-    !isThumbUp(f.thumb)
+    f.thumb.vertical !== "up"
   );
 }
 
@@ -191,17 +237,25 @@ export function classifyGesture(keypoints, handedness) {
   const middleDown = isCurled(f.middle);
   const ringDown = isCurled(f.ring);
   const pinkyDown = isCurled(f.pinky);
-  const thumbDown = !f.thumb.extended || f.thumb.strength < 0.35;
-
   const fingersUp = [indexUp, middleUp, ringUp, pinkyUp].filter(Boolean).length;
   const pinch = isPinchPose(keypoints);
+  const thumbsUp = isThumbsUpPose(keypoints, f);
+  const thumbsDown = isThumbDownPose(keypoints, f);
+  const thumbIdle = !thumbsUp && !thumbsDown;
 
-  // Pinch pose (static) — motion tracker handles zoom in/out while pinching
+  if (thumbsUp) {
+    return score("thumbs_up", 0.9 + Math.min(0.08, Math.abs(f.thumb.verticalNorm) * 2));
+  }
+
+  if (thumbsDown) {
+    return score("thumbs_down", 0.88 + f.thumb.strength * 0.1);
+  }
+
   if (pinch && !middleUp && !ringUp) {
     return score("pinch", 0.88);
   }
 
-  if (middleUp && indexDown && ringDown && pinkyDown && thumbDown) {
+  if (middleUp && indexDown && ringDown && pinkyDown && thumbIdle) {
     return score("middle_finger", 0.88 + f.middle.strength * 0.1);
   }
 
@@ -209,20 +263,12 @@ export function classifyGesture(keypoints, handedness) {
     return score("rock_on", 0.82);
   }
 
-  if (indexUp && middleUp && ringDown && pinkyDown && thumbDown) {
+  if (indexUp && middleUp && ringDown && pinkyDown && thumbIdle) {
     return score("peace", 0.85 + f.index.strength * 0.1);
   }
 
-  if (indexUp && middleDown && ringDown && pinkyDown && thumbDown) {
+  if (indexUp && middleDown && ringDown && pinkyDown && thumbIdle) {
     return score("pointing", 0.8 + f.index.strength * 0.15);
-  }
-
-  if (isThumbUp(f.thumb) && indexDown && middleDown && ringDown && pinkyDown) {
-    return score("thumbs_up", 0.85 + f.thumb.strength * 0.1);
-  }
-
-  if (isThumbDown(f.thumb) && indexDown && middleDown && ringDown && pinkyDown) {
-    return score("thumbs_down", 0.85 + f.thumb.strength * 0.1);
   }
 
   if (fingersUp >= 4 && indexUp && middleUp && ringUp && pinkyUp) {
@@ -230,15 +276,8 @@ export function classifyGesture(keypoints, handedness) {
     return score("open_palm", 0.75 + palmScore * 0.2);
   }
 
-  if (indexDown && middleDown && ringDown && pinkyDown && thumbDown) {
-    return score("fist", 0.9);
-  }
-
-  if (!indexUp && !middleUp && !ringUp && !pinkyUp && !f.thumb.extended && fingersUp === 0) {
-    const maxStrength = Math.max(f.index.strength, f.middle.strength, f.ring.strength, f.pinky.strength);
-    if (maxStrength < 0.4) {
-      return score("fist", 0.7);
-    }
+  if (isFistPose(keypoints, f)) {
+    return score("fist", 0.88);
   }
 
   return null;

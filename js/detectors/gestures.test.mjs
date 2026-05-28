@@ -43,6 +43,9 @@ function mockHand(pose, handedness = "Right") {
   if (thumb === "down") {
     kp[4] = pt(0.32, 0.84);
     kp[3] = pt(0.34, 0.76);
+  } else if (thumb === "up_tilted") {
+    kp[4] = pt(0.34, 0.62);
+    kp[3] = pt(0.35, 0.66);
   } else if (thumb === true || thumb === "up") {
     kp[4] = pt(0.28, 0.55);
   } else {
@@ -75,6 +78,10 @@ const staticCases = [
   ["open_palm", { index: true, middle: true, ring: true, pinky: true, thumb: "up" }],
   ["fist", { index: false, middle: false, ring: false, pinky: false, thumb: false }],
   ["thumbs_up", { index: false, middle: false, ring: false, pinky: false, thumb: "up" }],
+  [
+    "thumbs_up_tilted",
+    { index: false, middle: false, ring: false, pinky: false, thumb: "up_tilted" },
+  ],
   ["thumbs_down", { index: false, middle: false, ring: false, pinky: false, thumb: "down" }],
   ["middle_finger", { index: false, middle: true, ring: false, pinky: false, thumb: false }],
   ["rock_on", { index: true, middle: false, ring: false, pinky: true, thumb: false }],
@@ -86,7 +93,8 @@ let total = staticCases.length + 2;
 for (const [expected, pose] of staticCases) {
   const hand = mockHand(pose);
   const stable = stabilizeMany(hand);
-  const ok = stable?.id === expected;
+  const expectId = expected === "thumbs_up_tilted" ? "thumbs_up" : expected;
+  const ok = stable?.id === expectId;
   if (ok) passed += 1;
   console.log(ok ? "✓" : "✗", expected, "→", stable?.id ?? "null");
 }
@@ -110,6 +118,14 @@ for (let i = 0; i < 12; i++) {
 const zoomOk = zoomIn?.id === "zoom_in";
 if (zoomOk) passed += 1;
 console.log(zoomOk ? "✓" : "✗", "zoom_in →", zoomIn?.id ?? "null");
+
+// Fist must not win when showing thumbs up
+const fistNotOnThumbsUp =
+  stabilizeMany(mockHand({ index: false, middle: false, ring: false, pinky: false, thumb: "up" }))
+    ?.id !== "fist";
+if (fistNotOnThumbsUp) passed += 1;
+else console.log("✗", "fist should not replace thumbs_up");
+total += 1;
 
 console.log(`\n${passed}/${total} passed`);
 process.exit(passed === total ? 0 : 1);
