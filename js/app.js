@@ -303,35 +303,17 @@ function resetTrackingState() {
   overlay.clear();
 }
 
-async function ensureWebGazerGaze() {
-  if (!isWebGazerEngine() || !stream || webGazerGaze || webGazerStarting) return;
-  webGazerStarting = true;
-  try {
-    const { createWebGazerGaze } = await import("./detectors/gaze-webgazer.js");
-    webGazerGaze = createWebGazerGaze({
-      onEvent: (e) => logDetection("face", e.label, e.detail),
-      onStatus: (detail) =>
-        eventLog.log({ category: "system", label: "WebGazer", detail }),
-      isGestureEnabled: (id) => gesturePrefs.isEnabled(id),
-      getMirrorDisplay: () => isMirrorPreview(),
-    });
-    await webGazerGaze.start(video, stream);
-    eventLog.log({
-      category: "system",
-      label: "WebGazer ready",
-      detail: "Look at the cursor and click around the page to train gaze mapping",
-    });
-  } catch (err) {
-    console.error(err);
-    webGazerGaze = null;
-    eventLog.log({
-      category: "system",
-      label: "WebGazer failed",
-      detail: err instanceof Error ? err.message : String(err),
-    });
-  } finally {
-    webGazerStarting = false;
-  }
+async function createWebGazerIfNeeded() {
+  if (webGazerGaze) return webGazerGaze;
+  const { createWebGazerGaze } = await import("./detectors/gaze-webgazer.js");
+  webGazerGaze = createWebGazerGaze({
+    onEvent: (e) => logDetection("face", e.label, e.detail),
+    onStatus: (detail) =>
+      eventLog.log({ category: "system", label: "WebGazer", detail }),
+    isGestureEnabled: (id) => gesturePrefs.isEnabled(id),
+    getMirrorDisplay: () => isMirrorPreview(),
+  });
+  return webGazerGaze;
 }
 
 function applyMirrorForStream(mediaStream) {
@@ -367,7 +349,29 @@ async function startCameraWithChoice(choice) {
     stream = null;
   }
 
-  stream = await openCameraStream(choice);
+  try {
+    if (isWebGazerEngine()) {
+      webGazerStarting = true;
+      const wg = await createWebGazerIfNeeded();
+      stream = await wg.acquireCameraStream(choice, video);
+    } else {
+      stream = await openCameraStream(choice);
+    }
+  } catch (err) {
+    console.error(err);
+    webGazerGaze = null;
+    setStatus("error", "Camera failed");
+    eventLog.log({
+      category: "system",
+      label: isWebGazerEngine() ? "WebGazer failed" : "Camera error",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    webGazerStarting = false;
+    return;
+  } finally {
+    webGazerStarting = false;
+  }
+
   if (choice.deviceId) selectedCameraId = choice.deviceId;
 
   video.srcObject = stream;
@@ -403,7 +407,12 @@ async function startCameraWithChoice(choice) {
   });
 
   if (isWebGazerEngine()) {
-    await ensureWebGazerGaze();
+    eventLog.log({
+      category: "system",
+      label: "WebGazer ready",
+      detail:
+        "On phone: tap around the page while looking where you tap. Keep your face in the preview.",
+    });
   }
 
   if (!rafId) loop();
@@ -527,7 +536,9 @@ async function loop() {
 
     overlay.draw(toggleHands.checked ? lastHands : [], togglePose.checked ? lastPoses : [], facesForOverlay);
 
-    if (running && toggleHands.checked && handDetector) {
+    if (running && isWebGazerEngine() && webGazerGaze) {
+      setStatus("active", webGazerGaze.getStatusDetail());
+    } else if (running && toggleHands.checked && handDetector) {
       const n = lastHands.length;
       const base = "Tracking active";
       setStatus("active", n ? `${base} · ${n} hand${n > 1 ? "s" : ""}` : `${base} · scanning for hands…`);

@@ -23,5 +23,12 @@ declare global {
     showPredictionPoints: (v: boolean) => unknown;
     saveDataAcrossSessions: (v: boolean) => unknown;
     applyKalmanFilter: (v: boolean) => unknown;
+    setCameraConstraints: (c: MediaStreamConstraints) => unknown;
+    setInternalVideoBufferSizes: (w: number, h: number) => unknown;
+    setRegression: (name: string) => unknown;
+    recordScreenPosition: (x: number, y: number, eventType?: string) => unknown;
+    addMouseEventListeners: () => unknown;
+    removeMouseEventListeners: () => unknown;
+    resume: () => Promise<unknown>;
   };
 }
