@@ -27,6 +27,33 @@ export const LM = {
 /** @typedef {{ extended: boolean, vertical: 'up' | 'down' | 'neutral', strength: number, spreadDelta: number, verticalNorm: number }} ThumbState */
 
 /**
+ * @param {{ x: number, y: number, z?: number }} a
+ * @param {{ x: number, y: number, z?: number }} b
+ * @param {{ x: number, y: number, z?: number }} c
+ */
+function jointAngleRad(a, b, c) {
+  const v1x = a.x - b.x;
+  const v1y = a.y - b.y;
+  const v2x = c.x - b.x;
+  const v2y = c.y - b.y;
+  const m1 = Math.hypot(v1x, v1y) || 1e-6;
+  const m2 = Math.hypot(v2x, v2y) || 1e-6;
+  const cos = Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (m1 * m2)));
+  return Math.acos(cos);
+}
+
+/**
+ * @param {{ x: number, y: number, z?: number }[]} keypoints
+ */
+export function palmSpan(keypoints) {
+  return Math.max(
+    dist(keypoints[LM.INDEX_MCP], keypoints[LM.PINKY_MCP]),
+    dist(keypoints[LM.INDEX_MCP], keypoints[LM.WRIST]),
+    1e-6
+  );
+}
+
+/**
  * @param {{ x: number, y: number, z?: number }[]} keypoints
  * @param {number} tipIdx
  * @param {number} dipIdx
@@ -45,7 +72,10 @@ function fingerState(keypoints, tipIdx, dipIdx, pipIdx, mcpIdx) {
   const pipToMcp = dist(pip, mcp);
 
   const lengthRatio = tipToMcp / Math.max(dipToMcp, 1e-6);
-  const pastPip = tipToMcp > pipToMcp * 1.08;
+  const pastPip = tipToMcp > pipToMcp * 1.06;
+  const pipAngle = jointAngleRad(mcp, pip, dip);
+  const dipAngle = jointAngleRad(pip, dip, tip);
+  const straight = (pipAngle + dipAngle) / 2;
 
   const boneX = dip.x - pip.x;
   const boneY = dip.y - pip.y;
@@ -54,12 +84,23 @@ function fingerState(keypoints, tipIdx, dipIdx, pipIdx, mcpIdx) {
   const boneLen = Math.hypot(boneX, boneY) || 1e-6;
   const alignment = (boneX * extX + boneY * extY) / (boneLen * (Math.hypot(extX, extY) || 1e-6));
 
-  const extended = lengthRatio > 1.1 && pastPip && alignment > 0.12;
-  const curled = lengthRatio < 1.05 || (!pastPip && lengthRatio < 1.08);
+  const extended =
+    straight > 2.35 &&
+    lengthRatio > 1.08 &&
+    pastPip &&
+    alignment > 0.1;
+  const curled = straight < 2.05 && lengthRatio < 1.06;
+
+  const angleStrength = extended ? Math.min(1, (straight - 2.2) * 1.4) : 0;
+  const lenStrength = extended ? Math.min(1, (lengthRatio - 1) * 2) : 0;
 
   return {
     extended,
-    strength: extended ? Math.min(1, (lengthRatio - 1) * 2) : curled ? 0 : 0.35,
+    strength: extended
+      ? Math.min(1, angleStrength * 0.5 + lenStrength * 0.5)
+      : curled
+        ? 0
+        : 0.3,
   };
 }
 
@@ -139,12 +180,12 @@ export function getFingerStates(keypoints, handedness) {
 
 /** @param {FingerState} state */
 function isExtended(state) {
-  return state.extended && state.strength >= 0.4;
+  return state.extended && state.strength >= 0.45;
 }
 
 /** @param {FingerState} state */
 function isCurled(state) {
-  return !state.extended && state.strength < 0.35;
+  return !state.extended && state.strength < 0.32;
 }
 
 /**
@@ -193,16 +234,22 @@ function isFistPose(keypoints, f) {
   const digitsCurled = [f.index, f.middle, f.ring, f.pinky].every((finger) => !finger.extended);
   const thumbWrapped = f.thumb.spreadDelta < 0.08 && !f.thumb.extended && f.thumb.vertical !== "up";
 
-  return digitsCurled && thumbWrapped;
+  const allCurled = [f.index, f.middle, f.ring, f.pinky].every(isCurled);
+  if (!digitsCurled || !allCurled || !thumbWrapped) return false;
+
+  const span = palmSpan(keypoints);
+  const thumbSpread = dist(keypoints[LM.THUMB_TIP], keypoints[LM.INDEX_MCP]) / span;
+  if (thumbSpread > 0.55 && f.thumb.verticalNorm < -0.06) return false;
+
+  return true;
 }
 
 /**
  * @param {{ x: number, y: number, z?: number }[]} keypoints
  */
 export function isPinchPose(keypoints) {
-  const palm = Math.max(dist(keypoints[LM.INDEX_MCP], keypoints[LM.PINKY_MCP]), 1e-6);
-  const ratio = dist(keypoints[LM.THUMB_TIP], keypoints[LM.INDEX_TIP]) / palm;
-  return ratio < 0.24;
+  const ratio = dist(keypoints[LM.THUMB_TIP], keypoints[LM.INDEX_TIP]) / palmSpan(keypoints);
+  return ratio < 0.22;
 }
 
 /**
@@ -277,10 +324,23 @@ export function classifyGesture(keypoints, handedness) {
   }
 
   if (isFistPose(keypoints, f)) {
-    return score("fist", 0.88);
+    const curlScore = [f.index, f.middle, f.ring, f.pinky].filter((x) => isCurled(x)).length / 4;
+    return score("fist", 0.86 + curlScore * 0.1);
   }
 
   return null;
+}
+
+/**
+ * @param {{ x: number, y: number, z?: number }[]} keypoints
+ * @param {string} [handedness]
+ * @returns {{ id: string, confidence: number } | null}
+ */
+export function classifyGestureWithQuality(keypoints, handedness, qualityScore = 1) {
+  const raw = classifyGesture(keypoints, handedness);
+  if (!raw) return null;
+  const q = Math.max(0.5, Math.min(1, qualityScore));
+  return { id: raw.id, confidence: Math.min(1, raw.confidence * (0.75 + q * 0.25)) };
 }
 
 /** @param {string} id @param {number} confidence */

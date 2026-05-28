@@ -1,5 +1,5 @@
 import { classifyGesture, getFingerStates, isPinchPose } from "./gestures.js";
-import { createGestureStabilizer } from "./gesture-stabilizer.js";
+import { createPoseGestureStabilizer } from "./gesture-stabilizer.js";
 import { createMotionGestureTracker, pinchStrength } from "./gesture-motion.js";
 
 function pt(x, y, z = 0) {
@@ -63,8 +63,8 @@ function mockPinchHand() {
   return hand;
 }
 
-function stabilizeMany(hand, frames = 10) {
-  const s = createGestureStabilizer();
+function stabilizeMany(hand, frames = 14) {
+  const s = createPoseGestureStabilizer();
   let last = null;
   for (let i = 0; i < frames; i++) {
     last = s.push("r", classifyGesture(hand.keypoints, hand.handedness));
